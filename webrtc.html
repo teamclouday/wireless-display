@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebRTC Test Client</title>
+  </head>
+  <body>
+    <video
+      id="remoteVideo"
+      autoplay
+      playsinline
+      style="width: 90dvw; height: 90dvh"
+    ></video>
+    <button onclick="connect()">Connect</button>
+    <script>
+      const video = document.getElementById("remoteVideo");
+      let pc;
+
+      async function connect() {
+        pc = new RTCPeerConnection();
+
+        pc.ontrack = (event) => {
+          video.srcObject = event.streams[0];
+        };
+
+        // Add a receive-only transceiver for video
+        pc.addTransceiver("video", { direction: "recvonly" });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Wait for ICE gathering to complete (should be much faster now)
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === "complete") {
+            resolve();
+          } else {
+            pc.addEventListener("icegatheringstatechange", () => {
+              if (pc.iceGatheringState === "complete") {
+                resolve();
+              }
+            });
+          }
+        });
+
+        const response = await fetch("http://localhost:8787/sdp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sdp: btoa(JSON.stringify(pc.localDescription)), // Use localDescription, not offer
+            password: null,
+          }),
+        });
+
+        const data = await response.json();
+        const answer = JSON.parse(atob(data.sdp));
+        await pc.setRemoteDescription(answer);
+      }
+    </script>
+  </body>
+</html>
