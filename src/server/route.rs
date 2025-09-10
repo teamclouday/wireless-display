@@ -6,7 +6,7 @@ use warp::Filter;
 use webrtc::{
     api::{
         APIBuilder,
-        media_engine::{MIME_TYPE_VP9, MediaEngine},
+        media_engine::{MIME_TYPE_H264, MediaEngine},
     },
     peer_connection::{
         configuration::RTCConfiguration, peer_connection_state::RTCPeerConnectionState,
@@ -86,7 +86,7 @@ async fn sdp_handler(
     // prepare local video track
     let video_track = Arc::new(TrackLocalStaticSample::new(
         RTCRtpCodecCapability {
-            mime_type: MIME_TYPE_VP9.to_owned(),
+            mime_type: MIME_TYPE_H264.to_owned(),
             ..Default::default()
         },
         "video".to_owned(),
@@ -156,11 +156,15 @@ async fn create_peer_connection() -> Result<Arc<webrtc::peer_connection::RTCPeer
     m.register_codec(
         RTCRtpCodecParameters {
             capability: RTCRtpCodecCapability {
-                mime_type: MIME_TYPE_VP9.to_owned(),
+                mime_type: MIME_TYPE_H264.to_owned(),
                 clock_rate: 90000,
                 channels: 0,
+                sdp_fmtp_line:
+                    "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42001f"
+                        .to_string(),
                 ..Default::default()
             },
+            payload_type: 102,
             ..Default::default()
         },
         RTPCodecType::Video,

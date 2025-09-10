@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use ffmpeg_next as ffmpeg;
-use tokio::runtime::Handle;
+use tokio::sync::mpsc;
 use webrtc::media::Sample;
 
 use super::AppState;
@@ -25,9 +25,21 @@ impl Display for CaptureDevice {
 }
 
 pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
-    tokio::task::spawn_blocking(move || {
-        let rt = Handle::current();
+    let (tx, mut rx) = mpsc::channel::<Sample>(30);
+    let state_clone = state.clone();
 
+    let send_task = tokio::spawn(async move {
+        while let Some(sample) = rx.recv().await {
+            if let Some(video_track) = state_clone.video_track.lock().await.as_mut() {
+                if let Err(err) = video_track.write_sample(&sample).await {
+                    eprintln!("Error writing sample: {}", err);
+                    continue;
+                }
+            }
+        }
+    });
+
+    let capture_task = tokio::task::spawn_blocking(move || {
         ffmpeg::init()?;
 
         // create input context
@@ -44,6 +56,10 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
         let mut decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())?
             .decoder()
             .video()?;
+        decoder.set_threading(ffmpeg_next::threading::Config {
+            kind: ffmpeg::threading::Type::Frame,
+            count: 2,
+        });
 
         // create scaler
         let mut scaler = ffmpeg::software::scaling::Context::get(
@@ -56,9 +72,9 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
             ffmpeg::software::scaling::flag::Flags::BILINEAR,
         )?;
 
-        // set up VP9 encoder for WebRTC
-        let encoder_codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::VP9)
-            .ok_or(anyhow::anyhow!("VP9 encoder not found"))?;
+        // set up encoder for WebRTC
+        let encoder_codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
+            .ok_or(anyhow::anyhow!("H264 encoder not found"))?;
 
         let mut encoder_ctx = ffmpeg::codec::context::Context::new_with_codec(encoder_codec)
             .encoder()
@@ -70,11 +86,27 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
 
         let encoder_time_base = ffmpeg::Rational(1, 90000);
         encoder_ctx.set_time_base(encoder_time_base);
+        encoder_ctx.set_bit_rate(4_000_000);
+        encoder_ctx.set_gop(15);
+        encoder_ctx.set_max_b_frames(0);
+        encoder_ctx.set_threading(ffmpeg_next::threading::Config {
+            kind: ffmpeg::threading::Type::Frame,
+            count: 2,
+        });
 
         let mut opts = ffmpeg::Dictionary::new();
-        opts.set("deadline", "realtime");
-        opts.set("cpu-used", "8");
-        opts.set("g", "120");
+        opts.set("preset", "ultrafast"); // Fastest encoding
+        opts.set("tune", "zerolatency"); // Zero latency tuning
+        opts.set("profile", "baseline"); // Simple profile
+        opts.set("level", "3.1");
+        opts.set("crf", "23"); // Constant rate factor
+        opts.set("keyint", "15"); // Keyframe every 15 frames
+        opts.set("keyint_min", "5"); // Minimum keyframe interval
+        opts.set("g", "15"); // GOP size
+        opts.set("bf", "0"); // No B-frames
+        opts.set("refs", "1"); // Only 1 reference frame
+        opts.set("sc_threshold", "0"); // Disable scene change detection
+        opts.set("rc_lookahead", "0"); // No lookahead
 
         let mut encoder = encoder_ctx.open_with(opts)?;
 
@@ -104,7 +136,7 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
                     encoder.send_frame(&scaled_frame)?;
                     let mut encoded_packet = ffmpeg::Packet::empty();
                     while encoder.receive_packet(&mut encoded_packet).is_ok() {
-                        if let Some(video_track) = state.video_track.blocking_lock().as_mut() {
+                        if state.video_track.try_lock().is_ok_and(|t| t.is_some()) {
                             // send to WebRTC
                             let packet_data = encoded_packet.data().unwrap().to_vec();
                             let current_pts = encoded_packet.pts().unwrap_or(last_pts);
@@ -125,7 +157,10 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
                                 duration: sample_duration,
                                 ..Default::default()
                             };
-                            rt.block_on(async { video_track.write_sample(&sample).await })?;
+
+                            if let Err(_) = tx.try_send(sample) {
+                                eprintln!("Sample queue full, dropping frame");
+                            }
                         }
                     }
                 }
@@ -133,8 +168,16 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
         }
 
         Ok(())
-    })
-    .await?
+    });
+
+    tokio::select! {
+        result = capture_task => {
+            result?
+        }
+        _ = send_task => {
+            Err(anyhow::anyhow!("Sample sending task ended unexpectedly"))
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -157,6 +200,11 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
+    input_options.set("rtbufsize", "16M");
+    input_options.set("probesize", "1000000");
+    input_options.set("analyzeduration", "100000");
+    input_options.set("fflags", "+nobuffer+fastseek");
+    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = "desktop".to_string();
@@ -183,6 +231,11 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
+    input_options.set("rtbufsize", "16M");
+    input_options.set("probesize", "1000000");
+    input_options.set("analyzeduration", "100000");
+    input_options.set("fflags", "+nobuffer+fastseek");
+    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = format!(":0.0+{},{}", capture.x, capture.y);
@@ -208,6 +261,11 @@ fn create_input_context(
     input_options.set("pixel_format", "uyvy422");
     input_options.set("capture_cursor", "1");
     input_options.set("capture_mouse_clicks", "0");
+    input_options.set("rtbufsize", "16M");
+    input_options.set("probesize", "1000000");
+    input_options.set("analyzeduration", "100000");
+    input_options.set("fflags", "+nobuffer+fastseek");
+    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = format!("{}:", capture.index + 1);
