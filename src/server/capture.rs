@@ -40,10 +40,11 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
     });
 
     let capture_task = tokio::task::spawn_blocking(move || {
-        ffmpeg::init()?;
+        ffmpeg::init().map_err(|e| anyhow::anyhow!("Failed to initialize FFmpeg: {}", e))?;
 
         // create input context
-        let ictx = create_input_context(&state.device, state.framerate)?;
+        let ictx = create_input_context(&state.device, state.framerate)
+            .map_err(|e| anyhow::anyhow!("Failed to create input context: {}", e))?;
         let mut input = ictx.input();
         let ist = input
             .streams()
@@ -53,9 +54,11 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
         let ist_time_base = ist.time_base();
 
         // create decoder
-        let mut decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())?
+        let mut decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())
+            .map_err(|e| anyhow::anyhow!("Failed to create video decoder context: {}", e))?
             .decoder()
-            .video()?;
+            .video()
+            .map_err(|e| anyhow::anyhow!("Failed to create video decoder: {}", e))?;
         decoder.set_threading(ffmpeg_next::threading::Config {
             kind: ffmpeg::threading::Type::Frame,
             count: 2,
@@ -70,7 +73,8 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
             decoder.width(),
             decoder.height(),
             ffmpeg::software::scaling::flag::Flags::BILINEAR,
-        )?;
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create video scaler: {}", e))?;
 
         // set up encoder for WebRTC
         let encoder_codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
@@ -78,7 +82,8 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
 
         let mut encoder_ctx = ffmpeg::codec::context::Context::new_with_codec(encoder_codec)
             .encoder()
-            .video()?;
+            .video()
+            .map_err(|e| anyhow::anyhow!("Failed to create video encoder context: {}", e))?;
 
         encoder_ctx.set_height(decoder.height());
         encoder_ctx.set_width(decoder.width());
@@ -108,7 +113,9 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
         opts.set("sc_threshold", "0"); // Disable scene change detection
         opts.set("rc_lookahead", "0"); // No lookahead
 
-        let mut encoder = encoder_ctx.open_with(opts)?;
+        let mut encoder = encoder_ctx
+            .open_with(opts)
+            .map_err(|e| anyhow::anyhow!("Failed to open encoder: {}", e))?;
 
         println!("Starting capture on monitor: {}", state.device);
 
@@ -172,6 +179,10 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
 
     tokio::select! {
         result = capture_task => {
+            if let Err(err) = result {
+                eprintln!("{}", err);
+                std::process::exit(1);
+            }
             result?
         }
         _ = send_task => {

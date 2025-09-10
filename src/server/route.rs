@@ -32,7 +32,7 @@ impl warp::reject::Reject for ErrorMessage {}
 
 pub async fn build_route(
     state: Arc<AppState>,
-) -> Result<impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone> {
+) -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_headers(vec!["content-type"])
@@ -45,7 +45,7 @@ pub async fn build_route(
         .and_then(sdp_handler)
         .with(cors);
 
-    Ok(route)
+    route
 }
 
 fn with_app_state(

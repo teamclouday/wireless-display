@@ -76,7 +76,7 @@ pub async fn run_cli_server(port: u16, framerate: u32, password: Option<String>)
     ));
 
     // prepare warp route
-    let route = route::build_route(state.clone()).await?;
+    let route = route::build_route(state.clone()).await;
 
     // start screen capture
     tokio::spawn(capture::capture_screen(state.clone()));
