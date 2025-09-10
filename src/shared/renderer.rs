@@ -37,7 +37,8 @@ uniform sampler2D frameTexture;
 
 void main()
 {
-    FragColor = texture(frameTexture, TexCoord);
+    vec4 tex = texture(frameTexture, TexCoord);
+    FragColor = (tex - vec4(16.0/255.0)) * (255.0/219.0);
 }
 "#;
 
