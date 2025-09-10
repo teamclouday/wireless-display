@@ -84,7 +84,6 @@ impl ApplicationHandler for GuiWindow {
                             WINDOW_INITIAL_SIZE.0,
                             WINDOW_INITIAL_SIZE.1,
                         ))
-                        .with_window_level(winit::window::WindowLevel::AlwaysOnTop)
                         .with_decorations(true)
                         .with_visible(true),
                 )

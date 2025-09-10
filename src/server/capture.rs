@@ -111,6 +111,8 @@ pub async fn capture_screen(
         encoder_ctx.set_height(decoder.height());
         encoder_ctx.set_width(decoder.width());
         encoder_ctx.set_format(ffmpeg::format::Pixel::YUV420P);
+        encoder_ctx.set_color_range(ffmpeg::util::color::Range::MPEG);
+        encoder_ctx.set_colorspace(ffmpeg::util::color::Space::BT709);
 
         let encoder_time_base = ffmpeg::Rational(1, 90000);
         encoder_ctx.set_time_base(encoder_time_base);
