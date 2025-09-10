@@ -13,6 +13,13 @@ pub struct StreamFrame {
 }
 
 pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()> {
+    let _awake = keep_active::Builder::default()
+        .display(true)
+        .reason("Wireless Display Client Running")
+        .app_name("Wireless Display")
+        .app_reverse_domain("com.example.wireless-display")
+        .create()?;
+
     // find the server address and port using mDNS
     let server_addr = pair::find_server_address(code)
         .await?
