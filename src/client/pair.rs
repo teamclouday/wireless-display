@@ -7,7 +7,7 @@ use mdns_sd::{ServiceDaemon, ServiceEvent};
 pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
     let mdns = ServiceDaemon::new()?;
 
-    let service_type = "_wireless-display._tcp.local.";
+    let service_type = "_http._tcp.local.";
     let service_name = "wireless-display";
     let receiver = mdns.browse(service_type)?;
     println!("Browsing for '{}' on the local network...", service_name);
@@ -16,7 +16,9 @@ pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
 
     while let Ok(event) = receiver.recv_async().await {
         if let ServiceEvent::ServiceResolved(info) = event {
-            println!("Found service: {}", info.get_fullname());
+            if !info.get_fullname().starts_with(service_name) {
+                continue;
+            }
             let properties = info.get_properties();
 
             if let Some(service_code) = properties.get("code") {
@@ -40,6 +42,7 @@ pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
                                 info.get_fullname(),
                                 address
                             ))
+                            .default(true)
                             .interact()?
                         {
                             mdns.stop_browse(service_type)?;

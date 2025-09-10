@@ -1,11 +1,14 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
+use base64::{Engine, engine::general_purpose};
 use ffmpeg_next as ffmpeg;
 use tokio::sync::mpsc;
 use webrtc::{
     peer_connection::sdp::session_description::RTCSessionDescription,
-    rtp_transceiver::rtp_codec::RTPCodecType, track::track_remote::TrackRemote,
+    rtp::{codecs::h264::H264Packet, packetizer::Depacketizer},
+    rtp_transceiver::rtp_codec::RTPCodecType,
+    track::track_remote::TrackRemote,
 };
 
 use super::StreamFrame;
@@ -47,15 +50,20 @@ pub async fn start_webrtc(
 
     // create and send offer
     let offer = peer_connection.create_offer(None).await?;
-    let sdp = serde_json::to_string(&offer)?;
     peer_connection.set_local_description(offer).await?;
-    let sdp_data = SdpData { sdp, password };
+
+    // wait for ICE gathering to complete
+    let mut gather_complete = peer_connection.gathering_complete_promise().await;
+    let local_description = peer_connection.local_description().await.unwrap();
+    let sdp = general_purpose::STANDARD.encode(serde_json::to_string(&local_description)?);
+    let _ = gather_complete.recv().await;
 
     println!("Sending SDP to server at {}...", address);
 
+    let sdp_data = SdpData { sdp, password };
     let client = reqwest::Client::new();
     let res = client
-        .post(format!("{}:{}/sdp", address.ip(), address.port()))
+        .post(format!("http://{}:{}/sdp", address.ip(), address.port()))
         .json(&sdp_data)
         .send()
         .await?;
@@ -67,7 +75,13 @@ pub async fn start_webrtc(
 
     // get answer
     let answer_text = res.text().await?;
-    let answer: RTCSessionDescription = serde_json::from_str(&answer_text)?;
+    let answer_sdp: SdpData = serde_json::from_str(&answer_text)?;
+
+    let answer: RTCSessionDescription = {
+        let decoded_sdp = general_purpose::STANDARD.decode(answer_sdp.sdp)?;
+        let decoded_sdp_str = String::from_utf8(decoded_sdp)?;
+        serde_json::from_str(&decoded_sdp_str)?
+    };
 
     peer_connection.set_remote_description(answer).await?;
 
@@ -77,6 +91,10 @@ pub async fn start_webrtc(
 }
 
 async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<WebRTCPacket>) {
+    let mut h264_packet = H264Packet::default();
+    let mut frame_buf: Vec<u8> = Vec::with_capacity(1024 * 1024);
+    let mut last_timestamp: u32 = 0;
+
     loop {
         // Read RTP packet from track
         let (rtp_packet, _) = match track.read_rtp().await {
@@ -87,14 +105,26 @@ async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<We
             }
         };
 
-        let raw_packet = WebRTCPacket {
-            data: rtp_packet.payload.to_vec(),
-            timestamp: rtp_packet.header.timestamp,
-        };
+        if let Ok(payload) = h264_packet.depacketize(&rtp_packet.payload) {
+            frame_buf.extend_from_slice(&[0, 0, 0, 1]);
+            frame_buf.extend_from_slice(&payload);
+            last_timestamp = rtp_packet.header.timestamp;
+        }
 
-        if let Err(err) = packet_tx.send(raw_packet).await {
-            eprintln!("Failed to send RTP packet for processing: {}", err);
-            break;
+        if rtp_packet.header.marker {
+            if !frame_buf.is_empty() {
+                let raw_packet = WebRTCPacket {
+                    data: std::mem::take(&mut frame_buf),
+                    timestamp: last_timestamp,
+                };
+
+                if let Err(err) = packet_tx.send(raw_packet).await {
+                    eprintln!("Failed to send RTP packet for processing: {}", err);
+                    break;
+                }
+
+                frame_buf = Vec::with_capacity(1024 * 1024);
+            }
         }
     }
 }
@@ -119,7 +149,7 @@ async fn run_video_processor(
     let mut raw_frame = ffmpeg::frame::Video::empty();
     let mut rgb_frame = ffmpeg::frame::Video::empty();
 
-    while let Ok(webrtc_packet) = packet_rx.try_recv() {
+    while let Some(webrtc_packet) = packet_rx.recv().await {
         // Set packet data and timestamp
         let mut packet = ffmpeg::packet::Packet::copy(&webrtc_packet.data);
         packet.set_pts(Some(webrtc_packet.timestamp as i64));

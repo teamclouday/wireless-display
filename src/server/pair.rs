@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+use mdns_sd::{IfKind, ServiceDaemon, ServiceInfo};
 use tokio::sync::broadcast;
 
 pub async fn start_pairing_service(
@@ -10,12 +10,13 @@ pub async fn start_pairing_service(
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
     let mdns = ServiceDaemon::new()?;
+    mdns.disable_interface(IfKind::IPv6)?;
 
     let mut properties = HashMap::new();
     properties.insert("code".to_string(), code);
     properties.insert("port".to_string(), port.to_string());
 
-    let service_type = "_wireless-display._tcp.local.";
+    let service_type = "_http._tcp.local.";
     let service_name = "wireless-display";
 
     let service_info = ServiceInfo::new(
@@ -25,9 +26,13 @@ pub async fn start_pairing_service(
         "",
         0,
         properties,
-    )?;
+    )?
+    .enable_addr_auto();
 
-    mdns.register(service_info)?;
+    mdns.register(service_info).map_err(|e| {
+        eprintln!("Failed to register service: {}", e);
+        e
+    })?;
     println!("Pairing service started. Advertised as '{}'", service_name);
 
     // wait for shutdown signal

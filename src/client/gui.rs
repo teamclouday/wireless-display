@@ -99,6 +99,8 @@ impl ApplicationHandler for GuiWindow {
         self.gl_surface = Some(gl_surface);
         self.renderer = Some(OpenGLRenderer::new().unwrap());
 
+        window.request_redraw();
+
         println!("GUI window created. Press F11 to toggle fullscreen.");
     }
 
