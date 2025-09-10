@@ -58,6 +58,9 @@ pub async fn capture_screen(
 
     let shutdown_signal_clone = shutdown_signal.clone();
     let capture_task = tokio::task::spawn_blocking(move || {
+        unsafe {
+            ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
+        }
         ffmpeg::init().map_err(|e| anyhow::anyhow!("Failed to initialize FFmpeg: {}", e))?;
 
         // create input context

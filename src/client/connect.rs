@@ -133,6 +133,9 @@ async fn run_video_processor(
     mut packet_rx: mpsc::Receiver<WebRTCPacket>,
     frame_tx: mpsc::Sender<StreamFrame>,
 ) -> Result<()> {
+    unsafe {
+        ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
+    }
     ffmpeg::init()?;
 
     let codec = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
