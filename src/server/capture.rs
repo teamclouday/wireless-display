@@ -79,7 +79,7 @@ pub async fn capture_screen(
             .map_err(|e| anyhow::anyhow!("Failed to create video decoder: {}", e))?;
         decoder.set_threading(ffmpeg_next::threading::Config {
             kind: ffmpeg::threading::Type::Frame,
-            count: 2,
+            count: 0,
         });
 
         // create scaler
@@ -114,7 +114,7 @@ pub async fn capture_screen(
         encoder_ctx.set_max_b_frames(0);
         encoder_ctx.set_threading(ffmpeg_next::threading::Config {
             kind: ffmpeg::threading::Type::Frame,
-            count: 2,
+            count: 0,
         });
 
         let mut opts = ffmpeg::Dictionary::new();

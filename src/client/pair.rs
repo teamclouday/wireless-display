@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{collections::HashSet, net::SocketAddr};
 
 use anyhow::Result;
 use dialoguer::Confirm;
@@ -8,11 +8,15 @@ pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
     let mdns = ServiceDaemon::new()?;
 
     let service_type = "_wireless-display._tcp.local.";
+    let service_name = "wireless-display";
     let receiver = mdns.browse(service_type)?;
-    println!("Browsing for '{}' on the local network...", service_type);
+    println!("Browsing for '{}' on the local network...", service_name);
+
+    let mut visited_servers = HashSet::new();
 
     while let Ok(event) = receiver.recv_async().await {
         if let ServiceEvent::ServiceResolved(info) = event {
+            println!("Found service: {}", info.get_fullname());
             let properties = info.get_properties();
 
             if let Some(service_code) = properties.get("code") {
@@ -24,6 +28,12 @@ pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
                     let address = info.get_addresses().iter().find(|addr| addr.is_ipv4());
 
                     if let (Some(port), Some(address)) = (port, address) {
+                        let ip_address = address.to_ip_addr();
+                        if visited_servers.contains(&ip_address) {
+                            continue;
+                        }
+                        visited_servers.insert(ip_address);
+
                         if Confirm::new()
                             .with_prompt(format!(
                                 "Found server '{}' at {}. Connect?",
@@ -32,13 +42,16 @@ pub async fn find_server_address(code: String) -> Result<Option<SocketAddr>> {
                             ))
                             .interact()?
                         {
-                            return Ok(Some(SocketAddr::new(address.to_ip_addr(), port)));
+                            mdns.stop_browse(service_type)?;
+                            return Ok(Some(SocketAddr::new(ip_address, port)));
                         }
                     }
                 }
             }
         }
     }
+
+    mdns.stop_browse(service_type)?;
 
     Ok(None)
 }

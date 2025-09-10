@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 
 mod client;
 mod server;
+mod shared;
 
 use client::run_cli_client;
 use server::run_cli_server;

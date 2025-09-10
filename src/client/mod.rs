@@ -20,5 +20,14 @@ pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()
 
     let (frame_tx, frame_rx) = mpsc::channel::<StreamFrame>(10);
 
+    // start the webrtc in a separate task
+    let frame_tx_clone = frame_tx.clone();
+    tokio::spawn(connect::start_webrtc(password, server_addr, frame_tx_clone));
+
+    // run GUI in main thread
+    if let Err(err) = gui::run_gui(frame_rx) {
+        eprintln!("GUI error: {}", err);
+    }
+
     Ok(())
 }
