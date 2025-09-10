@@ -24,6 +24,8 @@ enum AppCommands {
     Server {
         #[arg(help = "Port to listen on", short, long, default_value_t = 8787)]
         port: u16,
+        #[arg(help = "Capture frame rate", short, long, default_value_t = 60)]
+        framerate: u32,
         #[arg(help = "Password for authentication", long)]
         password: Option<String>,
     },
@@ -40,7 +42,11 @@ async fn main() -> Result<()> {
     let cli = AppCli::parse();
 
     match cli.command {
-        AppCommands::Server { port, password } => run_cli_server(port, password).await?,
+        AppCommands::Server {
+            port,
+            framerate,
+            password,
+        } => run_cli_server(port, framerate, password).await?,
         AppCommands::Client { password } => run_cli_client(password).await?,
     }
 

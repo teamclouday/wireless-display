@@ -7,10 +7,12 @@ use webrtc::{
     peer_connection::RTCPeerConnection,
     track::track_local::track_local_static_sample::TrackLocalStaticSample,
 };
-use windows_capture::monitor::Monitor;
+use xcap::Monitor;
 
 mod capture;
 mod route;
+
+use capture::CaptureDevice;
 
 #[derive(PartialEq, Debug)]
 pub enum ConnectionState {
@@ -20,7 +22,8 @@ pub enum ConnectionState {
 }
 
 pub struct AppState {
-    pub screen_index: usize,
+    pub device: CaptureDevice,
+    pub framerate: u32,
     pub password: Option<String>,
     pub connection: Mutex<ConnectionState>,
     pub peer_connection: Mutex<Option<Arc<RTCPeerConnection>>>,
@@ -28,9 +31,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(screen_index: usize, password: Option<String>) -> Self {
+    pub fn new(device: CaptureDevice, framerate: u32, password: Option<String>) -> Self {
         AppState {
-            screen_index,
+            device,
+            framerate,
             password,
             connection: Mutex::new(ConnectionState::Disconnected),
             peer_connection: Mutex::new(None),
@@ -39,22 +43,37 @@ impl AppState {
     }
 }
 
-pub async fn run_cli_server(port: u16, password: Option<String>) -> Result<()> {
+pub async fn run_cli_server(port: u16, framerate: u32, password: Option<String>) -> Result<()> {
     // first select screen
-    let monitors = Monitor::enumerate().unwrap();
-    let selection = Select::new()
+    let devices = Monitor::all()?
+        .into_iter()
+        .enumerate()
+        .map(|(index, m)| CaptureDevice {
+            index,
+            name: m.name().unwrap_or("Unknown".to_string()),
+            width: m.width().unwrap_or_default(),
+            height: m.height().unwrap_or_default(),
+            x: m.x().unwrap_or_default(),
+            y: m.y().unwrap_or_default(),
+        })
+        .collect::<Vec<CaptureDevice>>();
+    let device_index = Select::new()
         .with_prompt("Select the virtual screen to use")
         .items(
-            &monitors
+            &devices
                 .iter()
-                .map(|m| m.name().unwrap_or("Unknown".to_string()))
+                .map(|m| format!("{}. {}", m.index + 1, m))
                 .collect::<Vec<String>>(),
         )
         .default(0)
         .interact()?;
 
     // init app state
-    let state = Arc::new(AppState::new(selection + 1, password.clone()));
+    let state = Arc::new(AppState::new(
+        devices[device_index].to_owned(),
+        framerate,
+        password.clone(),
+    ));
 
     // prepare warp route
     let route = route::build_route(state.clone()).await?;
