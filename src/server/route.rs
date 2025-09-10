@@ -30,7 +30,8 @@ struct ErrorMessage(pub String);
 
 impl warp::reject::Reject for ErrorMessage {}
 
-pub async fn build_route(
+pub fn create_warp_route(
+    port: u16,
     state: Arc<AppState>,
 ) -> impl warp::Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
     let cors = warp::cors()
@@ -45,6 +46,7 @@ pub async fn build_route(
         .and_then(sdp_handler)
         .with(cors);
 
+    println!("Starting server on port {}", port);
     route
 }
 

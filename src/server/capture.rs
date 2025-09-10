@@ -1,8 +1,15 @@
-use std::{fmt::Display, sync::Arc, time::Duration};
+use std::{
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use anyhow::Result;
 use ffmpeg_next as ffmpeg;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use webrtc::media::Sample;
 
 use super::AppState;
@@ -24,21 +31,32 @@ impl Display for CaptureDevice {
     }
 }
 
-pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
+pub async fn capture_screen(
+    state: Arc<AppState>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<Sample>(30);
     let state_clone = state.clone();
 
+    let shutdown_signal = Arc::new(AtomicBool::new(false));
+    let shutdown_signal_clone = shutdown_signal.clone();
+
     let send_task = tokio::spawn(async move {
-        while let Some(sample) = rx.recv().await {
-            if let Some(video_track) = state_clone.video_track.lock().await.as_mut() {
-                if let Err(err) = video_track.write_sample(&sample).await {
-                    eprintln!("Error writing sample: {}", err);
-                    continue;
+        while !shutdown_signal_clone.load(Ordering::Relaxed) {
+            if let Some(sample) = rx.recv().await {
+                if let Some(video_track) = state_clone.video_track.lock().await.as_mut() {
+                    if let Err(err) = video_track.write_sample(&sample).await {
+                        eprintln!("Error writing sample: {}", err);
+                        continue;
+                    }
                 }
             }
         }
+
+        Ok(())
     });
 
+    let shutdown_signal_clone = shutdown_signal.clone();
     let capture_task = tokio::task::spawn_blocking(move || {
         ffmpeg::init().map_err(|e| anyhow::anyhow!("Failed to initialize FFmpeg: {}", e))?;
 
@@ -165,12 +183,14 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
                                 ..Default::default()
                             };
 
-                            if let Err(_) = tx.try_send(sample) {
-                                eprintln!("Sample queue full, dropping frame");
-                            }
+                            let _ = tx.try_send(sample);
                         }
                     }
                 }
+            }
+
+            if shutdown_signal_clone.load(Ordering::Relaxed) {
+                break;
             }
         }
 
@@ -178,15 +198,16 @@ pub async fn capture_screen(state: Arc<AppState>) -> Result<()> {
     });
 
     tokio::select! {
-        result = capture_task => {
-            if let Err(err) = result {
-                eprintln!("{}", err);
-                std::process::exit(1);
-            }
-            result?
+        capture_result = capture_task => {
+            capture_result?
         }
-        _ = send_task => {
-            Err(anyhow::anyhow!("Sample sending task ended unexpectedly"))
+        send_result = send_task => {
+            send_result?
+        }
+        _ = shutdown_rx.recv() => {
+            println!("Shutting down screen capture...");
+            shutdown_signal.store(true, Ordering::Relaxed);
+            Ok(())
         }
     }
 }

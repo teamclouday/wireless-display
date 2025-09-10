@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use dialoguer::Select;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast};
 use webrtc::{
     peer_connection::RTCPeerConnection,
     track::track_local::track_local_static_sample::TrackLocalStaticSample,
@@ -10,6 +10,7 @@ use webrtc::{
 use xcap::Monitor;
 
 mod capture;
+mod pair;
 mod route;
 
 use capture::CaptureDevice;
@@ -43,7 +44,14 @@ impl AppState {
     }
 }
 
-pub async fn run_cli_server(port: u16, framerate: u32, password: Option<String>) -> Result<()> {
+pub async fn run_cli_server(
+    port: u16,
+    framerate: u32,
+    code: String,
+    password: Option<String>,
+) -> Result<()> {
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
     // first select screen
     let devices = Monitor::all()?
         .into_iter()
@@ -75,15 +83,34 @@ pub async fn run_cli_server(port: u16, framerate: u32, password: Option<String>)
         password.clone(),
     ));
 
-    // prepare warp route
-    let route = route::build_route(state.clone()).await;
-
     // start screen capture
-    tokio::spawn(capture::capture_screen(state.clone()));
+    let capture_handle = tokio::spawn(capture::capture_screen(
+        state.clone(),
+        shutdown_tx.subscribe(),
+    ));
+
+    // start pairing service
+    let pairing_handle = tokio::spawn(pair::start_pairing_service(code, shutdown_tx.subscribe()));
 
     // start warp server
-    println!("Starting server on port {}", port);
-    warp::serve(route).run(([0, 0, 0, 0], port)).await;
+    let route = route::create_warp_route(port, state.clone());
+    warp::serve(route)
+        .bind(([0, 0, 0, 0], port))
+        .await
+        .graceful(async {
+            let _ = tokio::signal::ctrl_c().await;
+        })
+        .run()
+        .await;
+
+    println!("Shutting down...");
+
+    let _ = shutdown_tx.send(());
+    let shutdown_timeout = tokio::time::Duration::from_secs(3);
+    let _ = tokio::time::timeout(shutdown_timeout, async {
+        tokio::join!(capture_handle, pairing_handle)
+    })
+    .await;
 
     Ok(())
 }
