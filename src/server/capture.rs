@@ -35,7 +35,7 @@ pub async fn capture_screen(
     state: Arc<AppState>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
-    let (tx, mut rx) = mpsc::channel::<Sample>(10);
+    let (tx, mut rx) = mpsc::channel::<Sample>(2);
     let state_clone = state.clone();
 
     let shutdown_signal = Arc::new(AtomicBool::new(false));
@@ -114,27 +114,16 @@ pub async fn capture_screen(
 
         let encoder_time_base = ffmpeg::Rational(1, 90000);
         encoder_ctx.set_time_base(encoder_time_base);
-        encoder_ctx.set_bit_rate(4_000_000);
-        encoder_ctx.set_gop(15);
-        encoder_ctx.set_max_b_frames(0);
-        encoder_ctx.set_threading(ffmpeg_next::threading::Config {
-            kind: ffmpeg::threading::Type::Frame,
-            count: 0,
-        });
 
         let mut opts = ffmpeg::Dictionary::new();
         opts.set("preset", "ultrafast"); // Fastest encoding
         opts.set("tune", "zerolatency"); // Zero latency tuning
         opts.set("profile", "baseline"); // Simple profile
-        opts.set("level", "3.1");
-        opts.set("crf", "23"); // Constant rate factor
-        opts.set("keyint", "15"); // Keyframe every 15 frames
-        opts.set("keyint_min", "5"); // Minimum keyframe interval
-        opts.set("g", "15"); // GOP size
-        opts.set("bf", "0"); // No B-frames
-        opts.set("refs", "1"); // Only 1 reference frame
-        opts.set("sc_threshold", "0"); // Disable scene change detection
-        opts.set("rc_lookahead", "0"); // No lookahead
+        opts.set("level", "3.1"); // H.264 level
+        opts.set("crf", "25"); // Constant Rate Factor (quality, lower is better)
+        opts.set("g", state.framerate.to_string().as_str());
+        opts.set("keyint", "15");
+        opts.set("sc_threshold", "0");
 
         let mut encoder = encoder_ctx
             .open_with(opts)
@@ -143,7 +132,6 @@ pub async fn capture_screen(
         println!("Starting capture on monitor: {}", state.device);
 
         let mut decoded_frame = ffmpeg::frame::Video::empty();
-        let mut last_pts: i64 = 0;
 
         for (stream, packet) in input.packets() {
             if stream.index() == ist_index {
@@ -169,18 +157,8 @@ pub async fn capture_screen(
                         if state.video_track.try_lock().is_ok_and(|t| t.is_some()) {
                             // send to WebRTC
                             let packet_data = encoded_packet.data().unwrap().to_vec();
-                            let current_pts = encoded_packet.pts().unwrap_or(last_pts);
-
-                            let pts_duration = if last_pts == 0 {
-                                1500 // Default duration for the first frame (90000 / 60fps)
-                            } else {
-                                current_pts - last_pts
-                            };
-
-                            let sample_duration = Duration::from_secs_f64(
-                                pts_duration as f64 / encoder_time_base.1 as f64,
-                            );
-                            last_pts = current_pts;
+                            let sample_duration =
+                                Duration::from_secs_f64(1.0 / state.framerate as f64);
 
                             let sample = Sample {
                                 data: packet_data.into(),
@@ -237,11 +215,6 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
-    input_options.set("rtbufsize", "16M");
-    input_options.set("probesize", "1000000");
-    input_options.set("analyzeduration", "100000");
-    input_options.set("fflags", "+nobuffer+fastseek");
-    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = "desktop".to_string();
@@ -268,11 +241,6 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
-    input_options.set("rtbufsize", "16M");
-    input_options.set("probesize", "1000000");
-    input_options.set("analyzeduration", "100000");
-    input_options.set("fflags", "+nobuffer+fastseek");
-    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = format!(":0.0+{},{}", capture.x, capture.y);
@@ -298,11 +266,6 @@ fn create_input_context(
     input_options.set("pixel_format", "uyvy422");
     input_options.set("capture_cursor", "1");
     input_options.set("capture_mouse_clicks", "0");
-    input_options.set("rtbufsize", "16M");
-    input_options.set("probesize", "1000000");
-    input_options.set("analyzeduration", "100000");
-    input_options.set("fflags", "+nobuffer+fastseek");
-    input_options.set("flags", "low_delay");
 
     // set device path
     let video_path = format!("{}:", capture.index + 1);

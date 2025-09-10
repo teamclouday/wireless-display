@@ -18,7 +18,7 @@ pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()
         .await?
         .ok_or(anyhow::anyhow!("Server not found"))?;
 
-    let (frame_tx, frame_rx) = mpsc::channel::<StreamFrame>(10);
+    let (frame_tx, frame_rx) = mpsc::channel::<StreamFrame>(2);
 
     // start the webrtc in a separate task
     let frame_tx_clone = frame_tx.clone();

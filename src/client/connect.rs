@@ -25,7 +25,7 @@ pub async fn start_webrtc(
     address: SocketAddr,
     frame_tx: mpsc::Sender<StreamFrame>,
 ) -> Result<()> {
-    let (packet_tx, packet_rx) = mpsc::channel::<WebRTCPacket>(10);
+    let (packet_tx, packet_rx) = mpsc::channel::<WebRTCPacket>(2);
 
     // spawn video processing task
     let frame_tx_clone = frame_tx.clone();
@@ -158,8 +158,7 @@ async fn run_video_processor(
         packet.set_pts(Some(webrtc_packet.timestamp as i64));
 
         // Send packet to decoder
-        if let Err(e) = decoder.send_packet(&packet) {
-            eprintln!("Error sending packet to decoder: {}", e);
+        if !decoder.send_packet(&packet).is_ok() {
             continue;
         }
 
