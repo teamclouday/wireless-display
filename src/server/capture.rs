@@ -35,7 +35,7 @@ pub async fn capture_screen(
     state: Arc<AppState>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
-    let (tx, mut rx) = mpsc::channel::<Sample>(30);
+    let (tx, mut rx) = mpsc::channel::<Sample>(10);
     let state_clone = state.clone();
 
     let shutdown_signal = Arc::new(AtomicBool::new(false));
@@ -61,8 +61,10 @@ pub async fn capture_screen(
         ffmpeg::init().map_err(|e| anyhow::anyhow!("Failed to initialize FFmpeg: {}", e))?;
 
         // create input context
-        let ictx = create_input_context(&state.device, state.framerate)
-            .map_err(|e| anyhow::anyhow!("Failed to create input context: {}", e))?;
+        let ictx = create_input_context(&state.device, state.framerate).map_err(|e| {
+            eprintln!("Failed to create input context: {}", e);
+            anyhow::anyhow!("Failed to create input context: {}", e)
+        })?;
         let mut input = ictx.input();
         let ist = input
             .streams()
