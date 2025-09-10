@@ -217,6 +217,7 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
+    input_options.set("draw_mouse", "0");
 
     // set device path
     let video_path = "desktop".to_string();
@@ -243,6 +244,7 @@ fn create_input_context(
         &format!("{}x{}", capture.width, capture.height),
     );
     input_options.set("framerate", &framerate.to_string());
+    input_options.set("draw_mouse", "0");
 
     // set device path
     let video_path = format!(":0.0+{},{}", capture.x, capture.y);
@@ -266,7 +268,7 @@ fn create_input_context(
     let mut input_options = ffmpeg::Dictionary::new();
     input_options.set("framerate", &framerate.to_string());
     input_options.set("pixel_format", "uyvy422");
-    input_options.set("capture_cursor", "1");
+    input_options.set("capture_cursor", "0");
     input_options.set("capture_mouse_clicks", "0");
 
     // set device path
