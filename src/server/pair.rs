@@ -5,6 +5,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tokio::sync::broadcast;
 
 pub async fn start_pairing_service(
+    port: u16,
     code: String,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
@@ -12,6 +13,7 @@ pub async fn start_pairing_service(
 
     let mut properties = HashMap::new();
     properties.insert("code".to_string(), code);
+    properties.insert("port".to_string(), port.to_string());
 
     let service_type = "_wireless-display._tcp.local.";
     let service_name = "wireless-display";

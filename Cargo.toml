@@ -26,3 +26,7 @@ ffmpeg-next = { version = "8.0.0", features = ["default"] }
 # mdns pairing
 mdns-sd = "0.15.1"
 flume = "0.11.1"
+
+# GUI
+winit = "0.30.12"
+pixels = "0.15.0"

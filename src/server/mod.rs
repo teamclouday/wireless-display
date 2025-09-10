@@ -90,7 +90,11 @@ pub async fn run_cli_server(
     ));
 
     // start pairing service
-    let pairing_handle = tokio::spawn(pair::start_pairing_service(code, shutdown_tx.subscribe()));
+    let pairing_handle = tokio::spawn(pair::start_pairing_service(
+        port,
+        code,
+        shutdown_tx.subscribe(),
+    ));
 
     // start warp server
     let route = route::create_warp_route(port, state.clone());
