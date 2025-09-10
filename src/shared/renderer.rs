@@ -252,8 +252,14 @@ pub fn setup_opengl_context(
     let window_handle = window.window_handle().unwrap();
     let display_handle = window.display_handle().unwrap();
 
-    let gl_display =
-        unsafe { Display::new(display_handle.as_raw(), DisplayApiPreference::Egl).unwrap() };
+    #[cfg(target_os = "macos")]
+    let api_preference = DisplayApiPreference::Cgl;
+    #[cfg(target_os = "windows")]
+    let api_preference = DisplayApiPreference::Wgl;
+    #[cfg(target_os = "linux")]
+    let api_preference = DisplayApiPreference::EglThenGlx;
+
+    let gl_display = unsafe { Display::new(display_handle.as_raw(), api_preference).unwrap() };
 
     let config_template = ConfigTemplateBuilder::new()
         .with_alpha_size(8)
