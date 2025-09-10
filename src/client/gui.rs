@@ -170,6 +170,11 @@ impl ApplicationHandler for GuiWindow {
             } => {
                 self.toggle_fullscreen();
             }
+            WindowEvent::Focused(focused) => {
+                if let Some(window) = &self.window {
+                    window.set_cursor_visible(!focused);
+                }
+            }
             _ => (),
         }
     }
