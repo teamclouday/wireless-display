@@ -92,7 +92,7 @@ pub async fn capture_screen(
             ffmpeg::format::Pixel::YUV420P,
             decoder.width(),
             decoder.height(),
-            ffmpeg::software::scaling::flag::Flags::BILINEAR,
+            ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
         )
         .map_err(|e| anyhow::anyhow!("Failed to create video scaler: {}", e))?;
 

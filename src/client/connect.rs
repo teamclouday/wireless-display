@@ -171,7 +171,7 @@ async fn run_video_processor(
                     ffmpeg::format::Pixel::RGBA,
                     raw_frame.width(),
                     raw_frame.height(),
-                    ffmpeg::software::scaling::Flags::BILINEAR,
+                    ffmpeg::software::scaling::Flags::FAST_BILINEAR,
                 )?;
 
                 scaler.run(&raw_frame, &mut rgb_frame)?;
