@@ -255,9 +255,9 @@ pub fn setup_opengl_context(
     #[cfg(target_os = "macos")]
     let api_preference = DisplayApiPreference::Cgl;
     #[cfg(target_os = "windows")]
-    let api_preference = DisplayApiPreference::Wgl;
+    let api_preference = DisplayApiPreference::Wgl(Some(window_handle.as_raw()));
     #[cfg(target_os = "linux")]
-    let api_preference = DisplayApiPreference::EglThenGlx;
+    let api_preference = DisplayApiPreference::EglThenGlx(Some(window_handle.as_raw()));
 
     let gl_display = unsafe { Display::new(display_handle.as_raw(), api_preference).unwrap() };
 
