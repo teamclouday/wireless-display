@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::Arc;
 
 use anyhow::Result;
 use dialoguer::Select;
@@ -29,7 +29,6 @@ pub struct AppState {
     pub connection: Mutex<ConnectionState>,
     pub peer_connection: Mutex<Option<Arc<RTCPeerConnection>>>,
     pub video_track: Mutex<Option<Arc<TrackLocalStaticSample>>>,
-    pub force_keyframe: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -41,7 +40,6 @@ impl AppState {
             connection: Mutex::new(ConnectionState::Disconnected),
             peer_connection: Mutex::new(None),
             video_track: Mutex::new(None),
-            force_keyframe: Arc::new(AtomicBool::new(false)),
         }
     }
 }

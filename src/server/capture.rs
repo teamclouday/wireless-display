@@ -144,13 +144,6 @@ pub async fn capture_screen(
                     // scale to YUV format
                     let original_pts = decoded_frame.pts().unwrap_or(0);
 
-                    if state.force_keyframe.swap(false, Ordering::SeqCst) {
-                        decoded_frame.set_kind(ffmpeg_next::picture::Type::I);
-                    } else {
-                        // Ensure it's not set otherwise
-                        decoded_frame.set_kind(ffmpeg_next::picture::Type::None);
-                    }
-
                     unsafe {
                         scaled_frame.set_pts(Some(ffmpeg_next::ffi::av_rescale_q(
                             original_pts,
