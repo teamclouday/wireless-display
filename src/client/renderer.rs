@@ -188,7 +188,11 @@ impl OpenGLRenderer {
                 gl::TEXTURE_WRAP_T,
                 gl::CLAMP_TO_EDGE as GLint,
             );
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
+            gl::TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MIN_FILTER,
+                gl::LINEAR_MIPMAP_LINEAR as GLint,
+            );
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
 
             let mouse_pos_uniform =
@@ -233,6 +237,7 @@ impl OpenGLRenderer {
                 gl::UNSIGNED_BYTE,
                 data.as_ptr() as *const GLvoid,
             );
+            gl::GenerateMipmap(gl::TEXTURE_2D);
         }
     }
 
