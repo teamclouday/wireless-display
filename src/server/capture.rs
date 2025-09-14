@@ -242,16 +242,29 @@ pub async fn capture_mouse(
 
             match Mouse::get_mouse_position() {
                 Mouse::Position { x, y } => {
-                    let relative_x = if state.device.width > 0 {
-                        ((x - state.device.x) as f64 / state.device.width as f64).clamp(0.0, 1.0)
+                    let mut relative_x = if state.device.width > 0 {
+                        (x - state.device.x) as f64 / state.device.width as f64
                     } else {
                         0.0
                     };
 
-                    let relative_y = if state.device.height > 0 {
-                        ((y - state.device.y) as f64 / state.device.height as f64).clamp(0.0, 1.0)
+                    let mut relative_y = if state.device.height > 0 {
+                        (y - state.device.y) as f64 / state.device.height as f64
                     } else {
                         0.0
+                    };
+
+                    // set to -1 if out of bounds
+                    relative_x = if relative_x >= 0.0 && relative_x <= 1.0 {
+                        relative_x
+                    } else {
+                        -1.0
+                    };
+
+                    relative_y = if relative_y >= 0.0 && relative_y <= 1.0 {
+                        relative_y
+                    } else {
+                        -1.0
                     };
 
                     let current_position = MousePosition {

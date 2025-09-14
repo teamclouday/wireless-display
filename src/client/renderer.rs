@@ -34,6 +34,7 @@ out vec4 FragColor;
 
 in vec2 TexCoord;
 uniform sampler2D frameTexture;
+uniform float frameAspect;
 uniform vec2 mousePos;
 uniform float cursorRadius;
 uniform int showCursor;
@@ -43,7 +44,10 @@ void main()
     vec4 tex = texture(frameTexture, TexCoord);
 
     if (showCursor == 1) {
-        float dist = distance(TexCoord, mousePos);
+        vec2 adjustedTexCoord = vec2(TexCoord.x * frameAspect, TexCoord.y);
+        vec2 adjustedMousePos = vec2(mousePos.x * frameAspect, mousePos.y);
+
+        float dist = distance(adjustedTexCoord, adjustedMousePos);
 
         if (dist < cursorRadius) {
             float alpha = 1.0 - smoothstep(cursorRadius * 0.7, cursorRadius, dist);
@@ -79,6 +83,7 @@ pub struct OpenGLRenderer {
     mouse_pos_uniform: GLint,
     cursor_radius_uniform: GLint,
     show_cursor_uniform: GLint,
+    frame_aspect_uniform: GLint,
 }
 
 impl OpenGLRenderer {
@@ -191,6 +196,8 @@ impl OpenGLRenderer {
                 gl::GetUniformLocation(shader_program, CString::new("cursorRadius")?.as_ptr());
             let show_cursor_uniform =
                 gl::GetUniformLocation(shader_program, CString::new("showCursor")?.as_ptr());
+            let frame_aspect_uniform =
+                gl::GetUniformLocation(shader_program, CString::new("frameAspect")?.as_ptr());
 
             Ok(Self {
                 vao,
@@ -203,6 +210,7 @@ impl OpenGLRenderer {
                 mouse_pos_uniform,
                 cursor_radius_uniform,
                 show_cursor_uniform,
+                frame_aspect_uniform,
             })
         }
     }
@@ -265,6 +273,7 @@ impl OpenGLRenderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::UseProgram(self.shader);
+            gl::Uniform1f(self.frame_aspect_uniform, frame_aspect);
 
             // set cursor
             if let Some((mx, my, radius)) = mouse {
