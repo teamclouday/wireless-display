@@ -82,7 +82,7 @@ pub async fn capture_screen(
             .decoder()
             .video()
             .map_err(|e| anyhow::anyhow!("Failed to create video decoder: {}", e))?;
-        decoder.set_threading(ffmpeg_next::threading::Config {
+        decoder.set_threading(ffmpeg::threading::Config {
             kind: ffmpeg::threading::Type::Frame,
             count: 0,
         });
@@ -145,7 +145,7 @@ pub async fn capture_screen(
                     let original_pts = decoded_frame.pts().unwrap_or(0);
 
                     unsafe {
-                        scaled_frame.set_pts(Some(ffmpeg_next::ffi::av_rescale_q(
+                        scaled_frame.set_pts(Some(ffmpeg::ffi::av_rescale_q(
                             original_pts,
                             ist_time_base.into(),
                             encoder_time_base.into(),

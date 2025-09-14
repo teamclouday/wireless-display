@@ -93,10 +93,10 @@ pub async fn start_webrtc(
 async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<WebRTCPacket>) {
     let mut h264_packet = H264Packet::default();
     let mut frame_buf: Vec<u8> = Vec::with_capacity(1024 * 1024);
-    let mut last_timestamp: u32 = 0;
+    let start_code: &[u8] = &[0, 0, 0, 1];
 
     loop {
-        // Read RTP packet from track
+        // read RTP packet from track
         let (rtp_packet, _) = match track.read_rtp().await {
             Ok(packet) => packet,
             Err(e) => {
@@ -105,25 +105,25 @@ async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<We
             }
         };
 
+        // depacketize RTP payload
         if let Ok(payload) = h264_packet.depacketize(&rtp_packet.payload) {
-            frame_buf.extend_from_slice(&[0, 0, 0, 1]);
-            frame_buf.extend_from_slice(&payload);
-            last_timestamp = rtp_packet.header.timestamp;
+            if !payload.is_empty() {
+                // prepend every NAL unit with a start code
+                frame_buf.extend_from_slice(start_code);
+                frame_buf.extend_from_slice(&payload);
+            }
         }
 
-        if rtp_packet.header.marker {
-            if !frame_buf.is_empty() {
-                let raw_packet = WebRTCPacket {
-                    data: std::mem::take(&mut frame_buf),
-                    timestamp: last_timestamp,
-                };
+        // send frame if marker bit is set
+        if rtp_packet.header.marker && !frame_buf.is_empty() {
+            let raw_packet = WebRTCPacket {
+                data: std::mem::take(&mut frame_buf),
+                timestamp: rtp_packet.header.timestamp,
+            };
 
-                if let Err(err) = packet_tx.send(raw_packet).await {
-                    eprintln!("Failed to send RTP packet for processing: {}", err);
-                    break;
-                }
-
-                frame_buf = Vec::with_capacity(1024 * 1024);
+            if let Err(err) = packet_tx.send(raw_packet).await {
+                eprintln!("Failed to send frame: {}", err);
+                break;
             }
         }
     }
@@ -144,21 +144,32 @@ async fn run_video_processor(
     let context = ffmpeg::codec::context::Context::new_with_codec(codec);
     let mut decoder = context.decoder().video()?;
 
-    decoder.set_threading(ffmpeg_next::threading::Config {
+    decoder.set_threading(ffmpeg::threading::Config {
         kind: ffmpeg::threading::Type::Frame,
         count: 0,
     });
+    decoder.set_flags(ffmpeg::codec::flag::Flags::LOW_DELAY);
 
     let mut raw_frame = ffmpeg::frame::Video::empty();
     let mut rgb_frame = ffmpeg::frame::Video::empty();
+    let rtp_time_base = ffmpeg::Rational(1, 90000);
+    let decoder_time_base = decoder.time_base();
 
     while let Some(webrtc_packet) = packet_rx.recv().await {
         // Set packet data and timestamp
         let mut packet = ffmpeg::packet::Packet::copy(&webrtc_packet.data);
-        packet.set_pts(Some(webrtc_packet.timestamp as i64));
+        unsafe {
+            let pts = ffmpeg::ffi::av_rescale_q(
+                webrtc_packet.timestamp as i64,
+                rtp_time_base.into(),
+                decoder_time_base.into(),
+            );
+            packet.set_pts(Some(pts));
+            packet.set_dts(Some(pts));
+        }
 
         // Send packet to decoder
-        if !decoder.send_packet(&packet).is_ok() {
+        if decoder.send_packet(&packet).is_err() {
             continue;
         }
 
