@@ -51,15 +51,16 @@ void main()
 
         if (dist < cursorRadius) {
             float alpha = 1.0 - smoothstep(cursorRadius * 0.7, cursorRadius, dist);
-            vec3 cursorColor = vec3(1.0, 1.0, 1.0);
-            float borderWidth = cursorRadius * 0.1;
+            float luminance = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+            vec3 xorColor = vec3(1.0 - luminance);
 
-            if (dist > cursorRadius - borderWidth) {
-                cursorColor = vec3(0.0, 0.0, 0.0); // Black border
-                alpha *= 0.8;
+            if (luminance < 0.3) {
+                xorColor = vec3(0.9); // Light on dark
+            } else if (luminance > 0.7) {
+                xorColor = vec3(0.1); // Dark on light
             }
 
-            FragColor = vec4(mix(tex.rgb, cursorColor, alpha * 0.6), 1.0);
+            FragColor = vec4(mix(tex.rgb, xorColor, alpha), 1.0);
         }
         else {
            FragColor = vec4(tex.rgb, 1.0);
