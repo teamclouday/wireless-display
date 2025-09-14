@@ -3,7 +3,7 @@ use std::{net::SocketAddr, sync::Arc};
 use anyhow::Result;
 use base64::{Engine, engine::general_purpose};
 use ffmpeg_next as ffmpeg;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use webrtc::{
     peer_connection::sdp::session_description::RTCSessionDescription,
     rtp::{codecs::h264::H264Packet, packetizer::Depacketizer},
@@ -12,7 +12,7 @@ use webrtc::{
 };
 
 use super::StreamFrame;
-use crate::shared::{SdpData, create_peer_connection};
+use crate::shared::{MousePosition, SdpData, create_peer_connection};
 
 #[derive(Debug, Clone)]
 struct WebRTCPacket {
@@ -26,10 +26,16 @@ pub async fn start_webrtc(
     frame_tx: mpsc::Sender<StreamFrame>,
 ) -> Result<()> {
     let (packet_tx, packet_rx) = mpsc::channel::<WebRTCPacket>(2);
+    let mouse_position = Arc::new(Mutex::new(None));
 
     // spawn video processing task
     let frame_tx_clone = frame_tx.clone();
-    tokio::spawn(run_video_processor(packet_rx, frame_tx_clone));
+    let mouse_position_clone = mouse_position.clone();
+    tokio::spawn(run_video_processor(
+        packet_rx,
+        frame_tx_clone,
+        mouse_position_clone,
+    ));
 
     // create peer connection
     let peer_connection = create_peer_connection().await?;
@@ -45,6 +51,30 @@ pub async fn start_webrtc(
             let tx = packet_tx.clone();
             tokio::spawn(process_video_track(track, tx));
         }
+        Box::pin(async {})
+    }));
+
+    // create mouse data channel
+    let mouse_channel = peer_connection
+        .create_data_channel("mouse", None)
+        .await
+        .unwrap();
+    mouse_channel.on_open(Box::new(|| {
+        println!("Mouse data channel opened");
+        Box::pin(async {})
+    }));
+    let mouse_pos_clone = mouse_position.clone();
+    mouse_channel.on_message(Box::new(move |msg| {
+        if let Ok(text) = String::from_utf8(msg.data.to_vec()) {
+            if let Ok(pos) = serde_json::from_str::<MousePosition>(&text) {
+                // println!("Received mouse position: x={}, y={}", pos.x, pos.y);
+                let mouse_pos = mouse_pos_clone.clone();
+                tokio::spawn(async move {
+                    *mouse_pos.lock().await = Some(pos);
+                });
+            }
+        }
+
         Box::pin(async {})
     }));
 
@@ -132,6 +162,7 @@ async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<We
 async fn run_video_processor(
     mut packet_rx: mpsc::Receiver<WebRTCPacket>,
     frame_tx: mpsc::Sender<StreamFrame>,
+    mouse_position: Arc<Mutex<Option<MousePosition>>>,
 ) -> Result<()> {
     unsafe {
         ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
@@ -176,7 +207,7 @@ async fn run_video_processor(
         // Receive decoded frames
         while decoder.receive_frame(&mut raw_frame).is_ok() {
             // Convert frame to RGB format for pixel buffer
-            let stream_frame = {
+            let mut stream_frame = {
                 let mut scaler = ffmpeg::software::scaling::context::Context::get(
                     raw_frame.format(),
                     raw_frame.width(),
@@ -198,8 +229,12 @@ async fn run_video_processor(
                     data,
                     width: width as u32,
                     height: height as u32,
+                    mouse: None,
                 }
             };
+
+            let current_mouse_pos = mouse_position.lock().await.clone();
+            stream_frame.mouse = current_mouse_pos;
 
             if let Err(e) = frame_tx.send(stream_frame).await {
                 eprintln!("Failed to send decoded frame: {}", e);

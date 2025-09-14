@@ -87,6 +87,23 @@ async fn sdp_handler(
     ));
     *state.video_track.lock().await = Some(video_track.clone());
 
+    // connect mouse data channel
+    let state_clone_for_dc = state.clone();
+    pc.on_data_channel(Box::new(move |dc| {
+        let label = dc.label().to_string();
+
+        if label == "mouse" {
+            println!("Mouse data channel opened");
+
+            let state_clone = state_clone_for_dc.clone();
+            tokio::spawn(async move {
+                *state_clone.mouse_channel.lock().await = Some(dc);
+            });
+        }
+
+        Box::pin(async {})
+    }));
+
     let rtp_sender = pc
         .add_track(Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>)
         .await
@@ -111,6 +128,7 @@ async fn sdp_handler(
                 *state_clone.connection.lock().await = ConnectionState::Disconnected;
                 *state_clone.peer_connection.lock().await = None;
                 *state_clone.video_track.lock().await = None;
+                *state_clone.mouse_channel.lock().await = None;
             }
         })
     }));

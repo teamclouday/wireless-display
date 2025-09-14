@@ -6,11 +6,14 @@ mod gui;
 mod pair;
 pub(crate) mod renderer;
 
+use crate::shared::MousePosition;
+
 #[derive(Debug, Clone)]
 pub struct StreamFrame {
     pub data: Vec<u8>,
     pub width: u32,
     pub height: u32,
+    pub mouse: Option<MousePosition>,
 }
 
 pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()> {

@@ -9,8 +9,11 @@ use std::{
 
 use anyhow::Result;
 use ffmpeg_next as ffmpeg;
+use mouse_position::mouse_position::Mouse;
 use tokio::sync::{broadcast, mpsc};
 use webrtc::media::Sample;
+
+use crate::shared::MousePosition;
 
 use super::AppState;
 
@@ -178,6 +181,91 @@ pub async fn capture_screen(
             if shutdown_signal_clone.load(Ordering::Relaxed) {
                 break;
             }
+        }
+
+        Ok(())
+    });
+
+    tokio::select! {
+        capture_result = capture_task => {
+            capture_result?
+        }
+        send_result = send_task => {
+            send_result?
+        }
+        _ = shutdown_rx.recv() => {
+            println!("Shutting down screen capture...");
+            shutdown_signal.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+}
+
+pub async fn capture_mouse(
+    state: Arc<AppState>,
+    mut shutdown_rx: broadcast::Receiver<()>,
+) -> Result<()> {
+    let (tx, mut rx) = mpsc::channel::<MousePosition>(64);
+    let state_clone = state.clone();
+
+    let shutdown_signal = Arc::new(AtomicBool::new(false));
+    let shutdown_signal_clone = shutdown_signal.clone();
+
+    let send_task = tokio::spawn(async move {
+        while !shutdown_signal_clone.load(Ordering::Relaxed) {
+            if let Some(position) = rx.recv().await {
+                if let Some(mouse_channel) = state_clone.mouse_channel.lock().await.as_mut() {
+                    if mouse_channel.ready_state()
+                        == webrtc::data_channel::data_channel_state::RTCDataChannelState::Open
+                    {
+                        let msg = serde_json::to_string(&position).unwrap();
+                        if let Err(err) = mouse_channel.send_text(msg).await {
+                            eprintln!("Error sending mouse position: {}", err);
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    });
+
+    let shutdown_signal_clone = shutdown_signal.clone();
+    let capture_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(16));
+
+        println!("Starting mouse capture...");
+
+        while !shutdown_signal_clone.load(Ordering::Relaxed) {
+            interval.tick().await;
+
+            match Mouse::get_mouse_position() {
+                Mouse::Position { x, y } => {
+                    let relative_x = if state.device.width > 0 {
+                        ((x - state.device.x) as f64 / state.device.width as f64).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+
+                    let relative_y = if state.device.height > 0 {
+                        ((y - state.device.y) as f64 / state.device.height as f64).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+
+                    let current_position = MousePosition {
+                        x: relative_x,
+                        y: relative_y,
+                    };
+
+                    let _ = tx.try_send(current_position);
+                }
+                Mouse::Error => {
+                    eprintln!("Failed to capture mouse position");
+                    break;
+                }
+            };
         }
 
         Ok(())

@@ -4,7 +4,7 @@ use anyhow::Result;
 use dialoguer::Select;
 use tokio::sync::{Mutex, broadcast};
 use webrtc::{
-    peer_connection::RTCPeerConnection,
+    data_channel::RTCDataChannel, peer_connection::RTCPeerConnection,
     track::track_local::track_local_static_sample::TrackLocalStaticSample,
 };
 use xcap::Monitor;
@@ -29,6 +29,7 @@ pub struct AppState {
     pub connection: Mutex<ConnectionState>,
     pub peer_connection: Mutex<Option<Arc<RTCPeerConnection>>>,
     pub video_track: Mutex<Option<Arc<TrackLocalStaticSample>>>,
+    pub mouse_channel: Mutex<Option<Arc<RTCDataChannel>>>,
 }
 
 impl AppState {
@@ -40,6 +41,7 @@ impl AppState {
             connection: Mutex::new(ConnectionState::Disconnected),
             peer_connection: Mutex::new(None),
             video_track: Mutex::new(None),
+            mouse_channel: Mutex::new(None),
         }
     }
 }
@@ -84,7 +86,13 @@ pub async fn run_cli_server(
     ));
 
     // start screen capture
-    let capture_handle = tokio::spawn(capture::capture_screen(
+    let capture_screen_handle = tokio::spawn(capture::capture_screen(
+        state.clone(),
+        shutdown_tx.subscribe(),
+    ));
+
+    // start mouse capture
+    let capture_mouse_handle = tokio::spawn(capture::capture_mouse(
         state.clone(),
         shutdown_tx.subscribe(),
     ));
@@ -112,7 +120,7 @@ pub async fn run_cli_server(
     let _ = shutdown_tx.send(());
     let shutdown_timeout = tokio::time::Duration::from_secs(3);
     let _ = tokio::time::timeout(shutdown_timeout, async {
-        tokio::join!(capture_handle, pairing_handle)
+        tokio::join!(capture_screen_handle, capture_mouse_handle, pairing_handle)
     })
     .await;
 

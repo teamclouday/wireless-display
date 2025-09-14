@@ -129,7 +129,20 @@ impl ApplicationHandler for GuiWindow {
 
                     let window_size = window.inner_size();
 
-                    renderer.render(window_size.width, window_size.height);
+                    if let Some(mouse) = &frame.mouse {
+                        let cursor_size = 50f32; // 50 pixels
+                        renderer.render_with_cursor(
+                            window_size.width,
+                            window_size.height,
+                            Some((
+                                mouse.x as f32,
+                                mouse.y as f32,
+                                cursor_size / window_size.height as f32,
+                            )),
+                        );
+                    } else {
+                        renderer.render(window_size.width, window_size.height);
+                    }
 
                     if let Err(err) = gl_surface.swap_buffers(gl_context) {
                         eprintln!("Failed to swap buffers: {}", err);

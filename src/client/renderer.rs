@@ -34,11 +34,36 @@ out vec4 FragColor;
 
 in vec2 TexCoord;
 uniform sampler2D frameTexture;
+uniform vec2 mousePos;
+uniform float cursorRadius;
+uniform int showCursor;
 
 void main()
 {
     vec4 tex = texture(frameTexture, TexCoord);
-    FragColor = vec4(tex.rgb, 1.0);
+
+    if (showCursor == 1) {
+        float dist = distance(TexCoord, mousePos);
+
+        if (dist < cursorRadius) {
+            float alpha = 1.0 - smoothstep(cursorRadius * 0.7, cursorRadius, dist);
+            vec3 cursorColor = vec3(1.0, 1.0, 1.0);
+            float borderWidth = cursorRadius * 0.1;
+
+            if (dist > cursorRadius - borderWidth) {
+                cursorColor = vec3(0.0, 0.0, 0.0); // Black border
+                alpha *= 0.8;
+            }
+
+            FragColor = vec4(mix(tex.rgb, cursorColor, alpha * 0.6), 1.0);
+        }
+        else {
+           FragColor = vec4(tex.rgb, 1.0);
+        }
+    }
+    else {
+        FragColor = vec4(tex.rgb, 1.0);
+    }
 }
 "#;
 
@@ -51,6 +76,9 @@ pub struct OpenGLRenderer {
     shader: GLuint,
     width: u32,
     height: u32,
+    mouse_pos_uniform: GLint,
+    cursor_radius_uniform: GLint,
+    show_cursor_uniform: GLint,
 }
 
 impl OpenGLRenderer {
@@ -157,6 +185,13 @@ impl OpenGLRenderer {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
 
+            let mouse_pos_uniform =
+                gl::GetUniformLocation(shader_program, CString::new("mousePos")?.as_ptr());
+            let cursor_radius_uniform =
+                gl::GetUniformLocation(shader_program, CString::new("cursorRadius")?.as_ptr());
+            let show_cursor_uniform =
+                gl::GetUniformLocation(shader_program, CString::new("showCursor")?.as_ptr());
+
             Ok(Self {
                 vao,
                 vbo,
@@ -165,6 +200,9 @@ impl OpenGLRenderer {
                 shader: shader_program,
                 width: 0,
                 height: 0,
+                mouse_pos_uniform,
+                cursor_radius_uniform,
+                show_cursor_uniform,
             })
         }
     }
@@ -190,6 +228,10 @@ impl OpenGLRenderer {
     }
 
     pub fn render(&self, width: u32, height: u32) {
+        self.render_with_cursor(width, height, None);
+    }
+
+    pub fn render_with_cursor(&self, width: u32, height: u32, mouse: Option<(f32, f32, f32)>) {
         unsafe {
             let frame_aspect = self.width as f32 / self.height as f32;
             let window_aspect = width as f32 / height as f32;
@@ -223,6 +265,16 @@ impl OpenGLRenderer {
             gl::Clear(gl::COLOR_BUFFER_BIT);
 
             gl::UseProgram(self.shader);
+
+            // set cursor
+            if let Some((mx, my, radius)) = mouse {
+                gl::Uniform2f(self.mouse_pos_uniform, mx, my);
+                gl::Uniform1f(self.cursor_radius_uniform, radius);
+                gl::Uniform1i(self.show_cursor_uniform, 1);
+            } else {
+                gl::Uniform1i(self.show_cursor_uniform, 0);
+            }
+
             gl::BindVertexArray(self.vao);
             gl::BindTexture(gl::TEXTURE_2D, self.texture);
             gl::DrawElements(
