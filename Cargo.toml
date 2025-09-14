@@ -1,8 +1,13 @@
 [package]
-name = "WirelessDisplay"
-version = "0.1.0"
+name = "wireless-display"
+version = "1.0.0"
 edition = "2024"
 homepage = "https://github.com/teamclouday/wireless-display"
+repository = "https://github.com/teamclouday/wireless-display"
+license = "GPL-3.0"
+description = "Use your laptop as a second monitor for your Windows desktop PC over WiFi."
+keywords = ["webrtc", "screen-capture", "remote-desktop"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.99"

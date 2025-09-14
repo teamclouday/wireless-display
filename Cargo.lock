@@ -3,32 +3,6 @@
 version = 4
 
 [[package]]
-name = "WirelessDisplay"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "dialoguer",
- "ffmpeg-next",
- "flume",
- "gl",
- "glutin",
- "keep-active",
- "mdns-sd",
- "mouse_position",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "warp",
- "webrtc",
- "webrtc-util",
- "winit",
- "xcap",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6243,6 +6217,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21a0236b59786fed61e2a80582dd500fe61f18b5dca67a4a067d0bc9039339cf"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wireless-display"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "dialoguer",
+ "ffmpeg-next",
+ "flume",
+ "gl",
+ "glutin",
+ "keep-active",
+ "mdns-sd",
+ "mouse_position",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "warp",
+ "webrtc",
+ "webrtc-util",
+ "winit",
+ "xcap",
 ]
 
 [[package]]

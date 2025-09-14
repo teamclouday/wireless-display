@@ -12,7 +12,7 @@ use server::run_cli_server;
 #[command(
     name = "wireless-display",
     version = "1.0",
-    about = "Use another PC as external monitor for your current PC"
+    about = "Use your laptop as a second monitor for your Windows desktop PC over WiFi."
 )]
 struct AppCli {
     #[command(subcommand)]
