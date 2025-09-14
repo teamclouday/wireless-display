@@ -236,8 +236,7 @@ async fn run_video_processor(
             let current_mouse_pos = mouse_position.lock().await.clone();
             stream_frame.mouse = current_mouse_pos;
 
-            if let Err(e) = frame_tx.send(stream_frame).await {
-                eprintln!("Failed to send decoded frame: {}", e);
+            if frame_tx.send(stream_frame).await.is_err() {
                 break;
             }
         }

@@ -77,7 +77,6 @@ pub async fn capture_screen(
             .best(ffmpeg::media::Type::Video)
             .ok_or_else(|| anyhow::anyhow!("No video stream found"))?;
         let ist_index = ist.index();
-        let ist_time_base = ist.time_base();
 
         // create decoder
         let mut decoder = ffmpeg::codec::context::Context::from_parameters(ist.parameters())
@@ -121,12 +120,11 @@ pub async fn capture_screen(
         encoder_ctx.set_time_base(encoder_time_base);
 
         let mut opts = ffmpeg::Dictionary::new();
-        opts.set("preset", "ultrafast"); // Fastest encoding
+        opts.set("preset", "fast"); // fast encoding
         opts.set("tune", "zerolatency"); // Zero latency tuning
-        opts.set("profile", "baseline"); // Simple profile
+        opts.set("profile", "naub"); // baseline profile
         opts.set("level", "3.1"); // H.264 level
-        opts.set("crf", "25"); // Constant Rate Factor (quality, lower is better)
-        opts.set("g", state.framerate.to_string().as_str());
+        opts.set("crf", "21"); // Constant Rate Factor (quality, lower is better)
         opts.set("keyint", "15");
         opts.set("sc_threshold", "0");
 
@@ -137,6 +135,7 @@ pub async fn capture_screen(
         println!("Starting capture on monitor: {}", state.device);
 
         let mut decoded_frame = ffmpeg::frame::Video::empty();
+        let mut frame_count: i64 = 0;
 
         for (stream, packet) in input.packets() {
             if stream.index() == ist_index {
@@ -145,18 +144,22 @@ pub async fn capture_screen(
                 let mut scaled_frame = ffmpeg::frame::Video::empty();
                 while decoder.receive_frame(&mut decoded_frame).is_ok() {
                     // scale to YUV format
-                    let original_pts = decoded_frame.pts().unwrap_or(0);
+                    // let original_pts = decoded_frame.pts().unwrap_or(0);
 
-                    unsafe {
-                        scaled_frame.set_pts(Some(ffmpeg::ffi::av_rescale_q(
-                            original_pts,
-                            ist_time_base.into(),
-                            encoder_time_base.into(),
-                        )));
-                    }
+                    // unsafe {
+                    //     scaled_frame.set_pts(Some(ffmpeg::ffi::av_rescale_q(
+                    //         original_pts,
+                    //         ist_time_base.into(),
+                    //         encoder_time_base.into(),
+                    //     )));
+                    // }
+                    let pts = (frame_count as f64 * encoder_time_base.denominator() as f64
+                        / state.framerate as f64) as i64;
+                    scaled_frame.set_pts(Some(pts));
+                    frame_count += 1;
                     scaler.run(&decoded_frame, &mut scaled_frame)?;
 
-                    // encode to VP9
+                    // encode to H264
                     encoder.send_frame(&scaled_frame)?;
                     let mut encoded_packet = ffmpeg::Packet::empty();
                     while encoder.receive_packet(&mut encoded_packet).is_ok() {
