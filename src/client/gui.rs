@@ -1,8 +1,4 @@
-use std::{
-    num::NonZeroU32,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroU32, sync::Arc};
 
 use anyhow::Result;
 use glutin::surface::GlSurface;
@@ -16,11 +12,12 @@ use winit::{
     window::Window,
 };
 
-use super::StreamFrame;
-use crate::shared::{OpenGLRenderer, setup_opengl_context};
+use super::{
+    StreamFrame,
+    renderer::{OpenGLRenderer, setup_opengl_context},
+};
 
 const WINDOW_INITIAL_SIZE: (u32, u32) = (1280, 720);
-const TARGET_FPS: u64 = 60;
 
 struct GuiWindow {
     window: Option<Arc<Window>>,
@@ -30,8 +27,6 @@ struct GuiWindow {
     gl_surface: Option<glutin::surface::Surface<glutin::surface::WindowSurface>>,
     renderer: Option<OpenGLRenderer>,
     is_fullscreen: bool,
-    last_frame_time: Instant,
-    frame_duration: Duration,
 }
 
 impl GuiWindow {
@@ -44,8 +39,6 @@ impl GuiWindow {
             gl_surface: None,
             renderer: None,
             is_fullscreen: false,
-            last_frame_time: Instant::now(),
-            frame_duration: Duration::from_millis(1000 / TARGET_FPS),
         }
     }
 
@@ -59,16 +52,6 @@ impl GuiWindow {
             self.is_fullscreen = !self.is_fullscreen;
         }
     }
-
-    fn should_render(&mut self) -> bool {
-        let now = Instant::now();
-        if now.duration_since(self.last_frame_time) >= self.frame_duration {
-            self.last_frame_time = now;
-            true
-        } else {
-            false
-        }
-    }
 }
 
 impl ApplicationHandler for GuiWindow {
@@ -77,7 +60,7 @@ impl ApplicationHandler for GuiWindow {
             event_loop
                 .create_window(
                     Window::default_attributes()
-                        .with_title("Video Stream")
+                        .with_title("Wireless Display Video Stream")
                         .with_active(true)
                         .with_resizable(true)
                         .with_inner_size(LogicalSize::new(
@@ -128,30 +111,28 @@ impl ApplicationHandler for GuiWindow {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if self.should_render() {
-                    if let (
-                        Some(window),
-                        Some(frame),
-                        Some(renderer),
-                        Some(gl_context),
-                        Some(gl_surface),
-                    ) = (
-                        &self.window,
-                        &self.current_frame,
-                        &mut self.renderer,
-                        &self.gl_context,
-                        &self.gl_surface,
-                    ) {
-                        // update texture with new frame data
-                        renderer.update_texture(&frame.data, frame.width, frame.height);
+                if let (
+                    Some(window),
+                    Some(frame),
+                    Some(renderer),
+                    Some(gl_context),
+                    Some(gl_surface),
+                ) = (
+                    &self.window,
+                    &self.current_frame,
+                    &mut self.renderer,
+                    &self.gl_context,
+                    &self.gl_surface,
+                ) {
+                    // update texture with new frame data
+                    renderer.update_texture(&frame.data, frame.width, frame.height);
 
-                        let window_size = window.inner_size();
+                    let window_size = window.inner_size();
 
-                        renderer.render(window_size.width, window_size.height);
+                    renderer.render(window_size.width, window_size.height);
 
-                        if let Err(err) = gl_surface.swap_buffers(gl_context) {
-                            eprintln!("Failed to swap buffers: {}", err);
-                        }
+                    if let Err(err) = gl_surface.swap_buffers(gl_context) {
+                        eprintln!("Failed to swap buffers: {}", err);
                     }
                 }
 

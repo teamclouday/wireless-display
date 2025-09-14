@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 mod connect;
 mod gui;
 mod pair;
+pub(crate) mod renderer;
 
 #[derive(Debug, Clone)]
 pub struct StreamFrame {

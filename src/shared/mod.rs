@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 mod connect;
-mod renderer;
 
 #[derive(Serialize, Deserialize)]
 pub struct SdpData {
@@ -10,4 +9,3 @@ pub struct SdpData {
 }
 
 pub use connect::create_peer_connection;
-pub use renderer::{OpenGLRenderer, setup_opengl_context};

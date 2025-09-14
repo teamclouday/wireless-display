@@ -7,7 +7,7 @@ use glutin::{
     context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext, Version},
     display::{Display, DisplayApiPreference},
     prelude::{GlDisplay, NotCurrentGlContext},
-    surface::{Surface, SurfaceAttributesBuilder, WindowSurface},
+    surface::{GlSurface, Surface, SurfaceAttributesBuilder, WindowSurface},
 };
 use winit::{
     raw_window_handle::{HasDisplayHandle, HasWindowHandle},
@@ -265,6 +265,7 @@ pub fn setup_opengl_context(
     let config_template = ConfigTemplateBuilder::new()
         .with_alpha_size(8)
         .with_transparency(false)
+        .with_multisampling(4)
         .build();
 
     let config = unsafe {
@@ -304,6 +305,14 @@ pub fn setup_opengl_context(
         let symbol = CString::new(symbol).unwrap();
         gl_display.get_proc_address(&symbol).cast()
     });
+
+    // Enable vsync
+    gl_surface
+        .set_swap_interval(
+            &gl_context,
+            glutin::surface::SwapInterval::Wait(NonZeroU32::new(1).unwrap()),
+        )
+        .unwrap();
 
     (gl_context, gl_surface)
 }
