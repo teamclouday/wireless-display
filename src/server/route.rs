@@ -1,6 +1,6 @@
 use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 use warp::Filter;
 use webrtc::{
     api::media_engine::MIME_TYPE_H264,
@@ -8,6 +8,7 @@ use webrtc::{
         peer_connection_state::RTCPeerConnectionState,
         sdp::session_description::RTCSessionDescription,
     },
+    rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication,
     rtp_transceiver::rtp_codec::RTCRtpCodecCapability,
     track::track_local::{TrackLocal, track_local_static_sample::TrackLocalStaticSample},
 };
@@ -93,9 +94,21 @@ async fn sdp_handler(
         .unwrap();
 
     // read incoming RTCP packets
+    let state_clone_for_rtcp = state.clone();
     tokio::spawn(async move {
         let mut rtcp_buf = vec![0u8; 1500];
-        while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
+        while let Ok((pkts, _)) = rtp_sender.read(&mut rtcp_buf).await {
+            // Check if any of the packets is a PictureLossIndication (PLI)
+            for pkt in pkts {
+                if let Some(_) = pkt.as_any().downcast_ref::<PictureLossIndication>() {
+                    println!("Received PLI from client, requesting keyframe...");
+                    // Set the atomic flag to true
+                    state_clone_for_rtcp
+                        .force_keyframe
+                        .store(true, Ordering::SeqCst);
+                }
+            }
+        }
     });
 
     // set handler for peer connection state
