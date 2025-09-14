@@ -27,12 +27,14 @@ wireless-display client
 
 See `wireless-display server --help` and `wireless-display client --help` for more options.
 
+Make sure both machines are on the same network.
 
 
 ## Why create this?
 
-My desk can only fit one desktop monitor, but I constantly need more screen space for development. I have a laptop so I thought why not use it as a second screen. I found some other solutions online, but they are either paid, less configurable, or overly complicated. So I decided to build my own.
+My desk can only fit one desktop monitor, but I always need more screen space for development. I have a laptop so I thought why not use it as a second screen. I found some other solutions online, but they are either paid, less configurable, or overly complicated. So I decided to build my own.
 
+WebRTC in combination with ffmpeg seemed to be good solution for this. But it's very complicated to set up. I had to use a little of help from AI to get it working. The result is still not perfect, but it's good enough for my use case.
 
 
 ## Useful links
