@@ -120,11 +120,11 @@ pub async fn capture_screen(
         encoder_ctx.set_time_base(encoder_time_base);
 
         let mut opts = ffmpeg::Dictionary::new();
-        opts.set("preset", "fast"); // fast encoding
-        opts.set("tune", "zerolatency"); // Zero latency tuning
-        opts.set("profile", "naub"); // baseline profile
-        opts.set("level", "3.1"); // H.264 level
-        opts.set("crf", "21"); // Constant Rate Factor (quality, lower is better)
+        opts.set("preset", "fast");
+        opts.set("tune", "zerolatency");
+        opts.set("profile", "high");
+        opts.set("level", "5.2");
+        opts.set("crf", "21");
         opts.set("keyint", "15");
         opts.set("sc_threshold", "0");
 
