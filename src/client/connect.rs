@@ -169,11 +169,6 @@ const HW_DECODERS: &[&str] = &[
     "h264_dxva2",   // Microsoft DXVA2 (older alternative)
 ];
 
-#[cfg(target_os = "macos")]
-const HW_DECODERS: &[&str] = &[
-    "h264_videotoolbox", // Apple VideoToolbox (handles both encoding and decoding)
-];
-
 #[cfg(target_os = "linux")]
 const HW_DECODERS: &[&str] = &[
     "h264_cuvid", // NVIDIA CUVID
@@ -207,6 +202,23 @@ fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
 }
 
 #[cfg(target_os = "macos")]
+unsafe extern "C" fn hardware_decoder_format_callback(
+    _ctx: *mut ffmpeg::ffi::AVCodecContext,
+    pix_fmts: *const ffmpeg::ffi::AVPixelFormat,
+) -> ffmpeg::ffi::AVPixelFormat {
+    unsafe {
+        let mut p = pix_fmts;
+        while *p != ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_NONE {
+            if *p == ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX {
+                return *p;
+            }
+            p = p.add(1);
+        }
+        ffmpeg::ffi::AVPixelFormat::AV_PIX_FMT_NONE
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
     let codec = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
         .ok_or(anyhow::anyhow!("H264 decoder not found"))?;
@@ -229,12 +241,16 @@ fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
                 eprintln!("Failed to enable hardware acceleration with video toolbox.");
             } else {
                 (*ctx_ptr).hw_device_ctx = hw_device_ctx;
+                (*ctx_ptr).get_format = Some(hardware_decoder_format_callback);
                 println!("Using hardware decoder: h264_videotoolbox");
             }
         }
     }
 
-    Ok(context.decoder().video()?)
+    Ok(context.decoder().video().map_err(|e| {
+        eprintln!("Failed to create video decoder: {}", e);
+        e
+    })?)
 }
 
 async fn run_video_processor(
