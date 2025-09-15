@@ -247,10 +247,7 @@ fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
         }
     }
 
-    Ok(context.decoder().video().map_err(|e| {
-        eprintln!("Failed to create video decoder: {}", e);
-        e
-    })?)
+    Ok(context.decoder().video()?)
 }
 
 async fn run_video_processor(
@@ -273,6 +270,7 @@ async fn run_video_processor(
     decoder.set_flags(ffmpeg::codec::flag::Flags::LOW_DELAY);
 
     let mut raw_frame = ffmpeg::frame::Video::empty();
+    let mut cpu_frame = ffmpeg::frame::Video::empty();
     let mut rgb_frame = ffmpeg::frame::Video::empty();
     let rtp_time_base = ffmpeg::Rational(1, 90000);
     let decoder_time_base = decoder.time_base();
@@ -297,19 +295,37 @@ async fn run_video_processor(
 
         // Receive decoded frames
         while decoder.receive_frame(&mut raw_frame).is_ok() {
+            // If the frame is hardware accelerated, transfer it to system memory
+            if raw_frame.format() == ffmpeg::format::Pixel::VIDEOTOOLBOX {
+                unsafe {
+                    let ret = ffmpeg::ffi::av_hwframe_transfer_data(
+                        cpu_frame.as_mut_ptr(),
+                        raw_frame.as_ptr(),
+                        0,
+                    );
+
+                    if ret < 0 {
+                        // If transfer fails, assume frame is already in system memory
+                        cpu_frame = raw_frame.clone();
+                    }
+                }
+            } else {
+                cpu_frame = raw_frame.clone();
+            }
+
             // Convert frame to RGB format for pixel buffer
             let mut stream_frame = {
                 let mut scaler = ffmpeg::software::scaling::context::Context::get(
-                    raw_frame.format(),
-                    raw_frame.width(),
-                    raw_frame.height(),
+                    cpu_frame.format(),
+                    cpu_frame.width(),
+                    cpu_frame.height(),
                     ffmpeg::format::Pixel::RGBA,
-                    raw_frame.width(),
-                    raw_frame.height(),
+                    cpu_frame.width(),
+                    cpu_frame.height(),
                     ffmpeg::software::scaling::Flags::FAST_BILINEAR,
                 )?;
 
-                scaler.run(&raw_frame, &mut rgb_frame)?;
+                scaler.run(&cpu_frame, &mut rgb_frame)?;
 
                 // copy pixel data out while scaler is still alive
                 let width = rgb_frame.width() as usize;
