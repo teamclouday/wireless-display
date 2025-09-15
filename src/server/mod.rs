@@ -51,6 +51,7 @@ pub async fn run_cli_server(
     framerate: u32,
     code: String,
     password: Option<String>,
+    acceleration: bool,
 ) -> Result<()> {
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
 
@@ -88,6 +89,7 @@ pub async fn run_cli_server(
     // start screen capture
     let capture_screen_handle = tokio::spawn(capture::capture_screen(
         state.clone(),
+        acceleration,
         shutdown_tx.subscribe(),
     ));
 

@@ -23,6 +23,7 @@ struct WebRTCPacket {
 pub async fn start_webrtc(
     password: Option<String>,
     address: SocketAddr,
+    acceleration: bool,
     frame_tx: mpsc::Sender<StreamFrame>,
 ) -> Result<()> {
     let (packet_tx, packet_rx) = mpsc::channel::<WebRTCPacket>(2);
@@ -35,6 +36,7 @@ pub async fn start_webrtc(
         packet_rx,
         frame_tx_clone,
         mouse_position_clone,
+        acceleration,
     ));
 
     // create peer connection
@@ -159,18 +161,50 @@ async fn process_video_track(track: Arc<TrackRemote>, packet_tx: mpsc::Sender<We
     }
 }
 
+#[cfg(target_os = "windows")]
+const HW_DECODERS: &[&str] = &[
+    "h264_cuvid",   // NVIDIA CUVID
+    "h264_qsv",     // Intel Quick Sync Video
+    "h264_d3d11va", // Microsoft D3D11VA (generic, works on most modern GPUs)
+    "h264_dxva2",   // Microsoft DXVA2 (older alternative)
+];
+
+#[cfg(target_os = "macos")]
+const HW_DECODERS: &[&str] = &[
+    "h264_videotoolbox", // Apple VideoToolbox (handles both encoding and decoding)
+];
+
+#[cfg(target_os = "linux")]
+const HW_DECODERS: &[&str] = &[
+    "h264_cuvid", // NVIDIA CUVID
+    "h264_vaapi", // Intel/AMD VA-API
+    "h264_vdpau", // NVIDIA VDPAU (alternative)
+];
+
 async fn run_video_processor(
     mut packet_rx: mpsc::Receiver<WebRTCPacket>,
     frame_tx: mpsc::Sender<StreamFrame>,
     mouse_position: Arc<Mutex<Option<MousePosition>>>,
+    acceleration: bool,
 ) -> Result<()> {
     unsafe {
         ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
     }
     ffmpeg::init()?;
 
-    let codec = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
-        .ok_or(anyhow::anyhow!("H264 decoder not found"))?;
+    let codec = if acceleration {
+        HW_DECODERS
+            .iter()
+            .find_map(|&name| ffmpeg::codec::decoder::find_by_name(name))
+            .unwrap_or_else(|| {
+                println!("No hardware decoders found. Falling back to software decoder (h264).");
+                ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
+                    .expect("Default H264 software decoder (h264) not found.")
+            })
+    } else {
+        ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
+            .ok_or(anyhow::anyhow!("H264 decoder not found"))?
+    };
 
     let context = ffmpeg::codec::context::Context::new_with_codec(codec);
     let mut decoder = context.decoder().video()?;

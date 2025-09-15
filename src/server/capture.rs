@@ -34,8 +34,28 @@ impl Display for CaptureDevice {
     }
 }
 
+#[cfg(target_os = "windows")]
+const HW_ENCODERS: &[&str] = &[
+    "h264_nvenc", // NVIDIA NVENC
+    "h264_amf",   // AMD AMF
+    "h264_qsv",   // Intel Quick Sync Video
+    "h264_mf",    // Microsoft Media Foundation
+];
+
+#[cfg(target_os = "macos")]
+const HW_ENCODERS: &[&str] = &[
+    "h264_videotoolbox", // Apple VideoToolbox
+];
+
+#[cfg(target_os = "linux")]
+const HW_ENCODERS: &[&str] = &[
+    "h264_nvenc", // NVIDIA NVENC
+    "h264_vaapi", // Intel/AMD VA-API
+];
+
 pub async fn capture_screen(
     state: Arc<AppState>,
+    acceleration: bool,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<Sample>(2);
@@ -102,8 +122,31 @@ pub async fn capture_screen(
         .map_err(|e| anyhow::anyhow!("Failed to create video scaler: {}", e))?;
 
         // set up encoder for WebRTC
-        let encoder_codec = ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
-            .ok_or(anyhow::anyhow!("H264 encoder not found"))?;
+        let (encoder_codec, codec_name) =
+            if acceleration {
+                HW_ENCODERS
+        .iter()
+        .find_map(|name| {
+            ffmpeg::codec::encoder::find_by_name(name).map(|encoder| {
+                println!("Successfully found hardware encoder: {}", name);
+                (encoder, *name)
+            })
+        })
+        .unwrap_or_else(|| {
+            println!("No hardware encoders found. Falling back to software encoder (libx264).");
+            (
+                ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
+                    .expect("Default H264 software encoder (libx264) not found."),
+                "libx264",
+            )
+        })
+            } else {
+                (
+                    ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
+                        .ok_or(anyhow::anyhow!("H264 encoder not found"))?,
+                    "libx264",
+                )
+            };
 
         let mut encoder_ctx = ffmpeg::codec::context::Context::new_with_codec(encoder_codec)
             .encoder()
@@ -120,13 +163,56 @@ pub async fn capture_screen(
         encoder_ctx.set_time_base(encoder_time_base);
 
         let mut opts = ffmpeg::Dictionary::new();
-        opts.set("preset", "fast");
-        opts.set("tune", "zerolatency");
-        opts.set("profile", "high");
-        opts.set("level", "5.2");
-        opts.set("crf", "21");
-        opts.set("keyint", "15");
-        opts.set("sc_threshold", "0");
+        match codec_name {
+            "h264_nvenc" => {
+                opts.set("preset", "p3");
+                opts.set("tune", "ll");
+                opts.set("rc", "constqp");
+                opts.set("qp", "23");
+                opts.set("profile", "high");
+                opts.set("level", "5.2");
+                opts.set("g", "15");
+            }
+            "h264_amf" => {
+                opts.set("usage", "ultralowlatency");
+                opts.set("quality", "balanced");
+                opts.set("rc", "cqp");
+                opts.set("qp_i", "23");
+                opts.set("qp_p", "23");
+                opts.set("profile", "high");
+                opts.set("level", "5.2");
+                opts.set("g", "15");
+            }
+            "h264_qsv" => {
+                opts.set("preset", "fast");
+                opts.set("global_quality", "23");
+                opts.set("look_ahead", "0");
+                opts.set("profile", "high");
+                opts.set("level", "5.2");
+                opts.set("g", "15");
+            }
+            "h264_videotoolbox" => {
+                opts.set("allow_b_frames", "0");
+                opts.set("profile", "high");
+                opts.set("g", "15");
+            }
+            "h264_vaapi" => {
+                opts.set("rc_mode", "CQP");
+                opts.set("qp", "23");
+                opts.set("profile", "100");
+                opts.set("g", "15");
+            }
+            _ => {
+                // default to libx264 settings
+                opts.set("preset", "fast");
+                opts.set("tune", "zerolatency");
+                opts.set("crf", "21");
+                opts.set("sc_threshold", "0");
+                opts.set("profile", "high");
+                opts.set("level", "5.2");
+                opts.set("keyint", "15");
+            }
+        };
 
         let mut encoder = encoder_ctx
             .open_with(opts)
@@ -144,15 +230,6 @@ pub async fn capture_screen(
                 let mut scaled_frame = ffmpeg::frame::Video::empty();
                 while decoder.receive_frame(&mut decoded_frame).is_ok() {
                     // scale to YUV format
-                    // let original_pts = decoded_frame.pts().unwrap_or(0);
-
-                    // unsafe {
-                    //     scaled_frame.set_pts(Some(ffmpeg::ffi::av_rescale_q(
-                    //         original_pts,
-                    //         ist_time_base.into(),
-                    //         encoder_time_base.into(),
-                    //     )));
-                    // }
                     let pts = (frame_count as f64 * encoder_time_base.denominator() as f64
                         / state.framerate as f64) as i64;
                     scaled_frame.set_pts(Some(pts));

@@ -16,7 +16,11 @@ pub struct StreamFrame {
     pub mouse: Option<MousePosition>,
 }
 
-pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()> {
+pub async fn run_cli_client(
+    code: String,
+    password: Option<String>,
+    acceleration: bool,
+) -> Result<()> {
     let _awake = keep_active::Builder::default()
         .display(true)
         .reason("Wireless Display Client Running")
@@ -33,7 +37,12 @@ pub async fn run_cli_client(code: String, password: Option<String>) -> Result<()
 
     // start the webrtc in a separate task
     let frame_tx_clone = frame_tx.clone();
-    tokio::spawn(connect::start_webrtc(password, server_addr, frame_tx_clone));
+    tokio::spawn(connect::start_webrtc(
+        password,
+        server_addr,
+        acceleration,
+        frame_tx_clone,
+    ));
 
     // run GUI in main thread
     if let Err(err) = gui::run_gui(frame_rx) {
