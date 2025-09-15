@@ -17,18 +17,17 @@ cargo install wireless-display
 
 On host machine (PC you are currently using):
 ```
-wireless-display server
+wireless-display server --acceleration
 ```
 
 Then on client machine (PC you want to use as second monitor):
 ```
-wireless-display client
+wireless-display client --acceleration
 ```
 
 See `wireless-display server --help` and `wireless-display client --help` for more options.
 
 Make sure both machines are on the same network.
-
 
 ## Why create this?
 

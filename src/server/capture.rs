@@ -166,9 +166,9 @@ pub async fn capture_screen(
         match codec_name {
             "h264_nvenc" => {
                 opts.set("preset", "p3");
-                opts.set("tune", "ll");
-                opts.set("rc", "constqp");
-                opts.set("qp", "23");
+                opts.set("tune", "ull");
+                opts.set("zerolatency", "1");
+                opts.set("delay", "0");
                 opts.set("profile", "high");
                 opts.set("level", "5.2");
                 opts.set("g", "15");
@@ -222,7 +222,6 @@ pub async fn capture_screen(
 
         let mut decoded_frame = ffmpeg::frame::Video::empty();
         let target_frame_duration = Duration::from_secs_f64(1.0 / state.framerate as f64);
-        let mut frame_count: i64 = 0;
 
         for (stream, packet) in input.packets() {
             if stream.index() == ist_index {
@@ -231,10 +230,7 @@ pub async fn capture_screen(
                 let mut scaled_frame = ffmpeg::frame::Video::empty();
                 while decoder.receive_frame(&mut decoded_frame).is_ok() {
                     // scale to YUV format
-                    let pts = (frame_count as f64 * encoder_time_base.denominator() as f64
-                        / state.framerate as f64) as i64;
-                    scaled_frame.set_pts(Some(pts));
-                    frame_count += 1;
+                    scaled_frame.set_pts(decoded_frame.pts());
                     scaler.run(&decoded_frame, &mut scaled_frame)?;
 
                     // encode to H264
@@ -312,8 +308,8 @@ pub async fn capture_mouse(
 
     let shutdown_signal_clone = shutdown_signal.clone();
     let capture_task = tokio::spawn(async move {
-        // capture mouse position every 33ms (~30fps)
-        let mut interval = tokio::time::interval(Duration::from_millis(33));
+        // capture mouse position every at ~60 FPS
+        let mut interval = tokio::time::interval(Duration::from_millis(16));
         let mut last_position = MousePosition { x: -1.0, y: -1.0 };
 
         println!("Starting mouse capture...");

@@ -195,7 +195,12 @@ async fn run_video_processor(
     let codec = if acceleration {
         HW_DECODERS
             .iter()
-            .find_map(|&name| ffmpeg::codec::decoder::find_by_name(name))
+            .find_map(|&name| {
+                ffmpeg::codec::decoder::find_by_name(name).and_then(|decoder| {
+                    println!("Using hardware decoder: {}", name);
+                    Some(decoder)
+                })
+            })
             .unwrap_or_else(|| {
                 println!("No hardware decoders found. Falling back to software decoder (h264).");
                 ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)

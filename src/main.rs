@@ -32,7 +32,8 @@ enum AppCommands {
         #[arg(help = "Password for authentication", long)]
         password: Option<String>,
         #[arg(
-            help = "Enable hardware acceleration (Experimental)",
+            help = "Enable hardware acceleration",
+            short,
             long,
             default_value_t = false
         )]
@@ -46,7 +47,8 @@ enum AppCommands {
         #[arg(help = "Password for authentication", long)]
         password: Option<String>,
         #[arg(
-            help = "Enable hardware acceleration (Experimental)",
+            help = "Enable hardware acceleration",
+            short,
             long,
             default_value_t = false
         )]
