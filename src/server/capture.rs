@@ -55,7 +55,7 @@ const HW_ENCODERS: &[&str] = &[
 
 pub async fn capture_screen(
     state: Arc<AppState>,
-    acceleration: bool,
+    hwaccel: bool,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<Sample>(2);
@@ -122,31 +122,32 @@ pub async fn capture_screen(
         .map_err(|e| anyhow::anyhow!("Failed to create video scaler: {}", e))?;
 
         // set up encoder for WebRTC
-        let (encoder_codec, codec_name) =
-            if acceleration {
-                HW_ENCODERS
-        .iter()
-        .find_map(|name| {
-            ffmpeg::codec::encoder::find_by_name(name).map(|encoder| {
-                println!("Successfully found hardware encoder: {}", name);
-                (encoder, *name)
-            })
-        })
-        .unwrap_or_else(|| {
-            println!("No hardware encoders found. Falling back to software encoder (libx264).");
+        let (encoder_codec, codec_name) = if hwaccel {
+            HW_ENCODERS
+                .iter()
+                .find_map(|name| {
+                    ffmpeg::codec::encoder::find_by_name(name).map(|encoder| {
+                        println!("Successfully found hardware encoder: {}", name);
+                        (encoder, *name)
+                    })
+                })
+                .unwrap_or_else(|| {
+                    println!(
+                        "No hardware encoders found. Falling back to software encoder (libx264)."
+                    );
+                    (
+                        ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
+                            .expect("Default H264 software encoder (libx264) not found."),
+                        "libx264",
+                    )
+                })
+        } else {
             (
                 ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
-                    .expect("Default H264 software encoder (libx264) not found."),
+                    .ok_or(anyhow::anyhow!("H264 encoder not found"))?,
                 "libx264",
             )
-        })
-            } else {
-                (
-                    ffmpeg::codec::encoder::find(ffmpeg::codec::Id::H264)
-                        .ok_or(anyhow::anyhow!("H264 encoder not found"))?,
-                    "libx264",
-                )
-            };
+        };
 
         let mut encoder_ctx = ffmpeg::codec::context::Context::new_with_codec(encoder_codec)
             .encoder()

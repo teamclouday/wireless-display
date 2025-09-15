@@ -27,10 +27,11 @@ struct GuiWindow {
     gl_surface: Option<glutin::surface::Surface<glutin::surface::WindowSurface>>,
     renderer: Option<OpenGLRenderer>,
     is_fullscreen: bool,
+    cursor_size: u32,
 }
 
 impl GuiWindow {
-    fn new(frame_rx: mpsc::Receiver<StreamFrame>) -> Self {
+    fn new(frame_rx: mpsc::Receiver<StreamFrame>, cursor_size: u32) -> Self {
         Self {
             window: None,
             frame_rx,
@@ -39,6 +40,7 @@ impl GuiWindow {
             gl_surface: None,
             renderer: None,
             is_fullscreen: false,
+            cursor_size,
         }
     }
 
@@ -131,14 +133,13 @@ impl ApplicationHandler for GuiWindow {
 
                     if let Some(mouse) = &frame.mouse {
                         if mouse.x >= 0.0 && mouse.y >= 0.0 {
-                            let cursor_size = 8f32; // 8 pixels
                             renderer.render_with_cursor(
                                 window_size.width,
                                 window_size.height,
                                 Some((
                                     mouse.x as f32,
                                     mouse.y as f32,
-                                    cursor_size / window_size.height as f32,
+                                    self.cursor_size as f32 / window_size.height as f32,
                                 )),
                             );
                         } else {
@@ -173,10 +174,10 @@ impl ApplicationHandler for GuiWindow {
     }
 }
 
-pub fn run_gui(frame_rx: mpsc::Receiver<StreamFrame>) -> Result<()> {
+pub fn run_gui(frame_rx: mpsc::Receiver<StreamFrame>, cursor_size: u32) -> Result<()> {
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    let mut gui_window = GuiWindow::new(frame_rx);
+    let mut gui_window = GuiWindow::new(frame_rx, cursor_size);
     let _ = event_loop.run_app(&mut gui_window);
     Ok(())
 }

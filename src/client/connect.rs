@@ -23,7 +23,7 @@ struct WebRTCPacket {
 pub async fn start_webrtc(
     password: Option<String>,
     address: SocketAddr,
-    acceleration: bool,
+    hwaccel: bool,
     frame_tx: mpsc::Sender<StreamFrame>,
 ) -> Result<()> {
     let (packet_tx, packet_rx) = mpsc::channel::<WebRTCPacket>(2);
@@ -36,7 +36,7 @@ pub async fn start_webrtc(
         packet_rx,
         frame_tx_clone,
         mouse_position_clone,
-        acceleration,
+        hwaccel,
     ));
 
     // create peer connection
@@ -177,8 +177,8 @@ const HW_DECODERS: &[&str] = &[
 ];
 
 #[cfg(not(target_os = "macos"))]
-fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
-    let codec = if acceleration {
+fn setup_video_decoder(hwaccel: bool) -> Result<ffmpeg::decoder::Video> {
+    let codec = if hwaccel {
         HW_DECODERS
             .iter()
             .find_map(|&name| {
@@ -219,12 +219,12 @@ unsafe extern "C" fn hardware_decoder_format_callback(
 }
 
 #[cfg(target_os = "macos")]
-fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
+fn setup_video_decoder(hwaccel: bool) -> Result<ffmpeg::decoder::Video> {
     let codec = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
         .ok_or(anyhow::anyhow!("H264 decoder not found"))?;
     let mut context = ffmpeg::codec::context::Context::new_with_codec(codec);
 
-    if acceleration {
+    if hwaccel {
         unsafe {
             let ctx_ptr = context.as_mut_ptr();
 
@@ -238,7 +238,7 @@ fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
             );
 
             if ret < 0 {
-                eprintln!("Failed to enable hardware acceleration with video toolbox.");
+                eprintln!("Failed to enable hardware acceleration with videotoolbox.");
             } else {
                 (*ctx_ptr).hw_device_ctx = hw_device_ctx;
                 (*ctx_ptr).get_format = Some(hardware_decoder_format_callback);
@@ -254,14 +254,14 @@ async fn run_video_processor(
     mut packet_rx: mpsc::Receiver<WebRTCPacket>,
     frame_tx: mpsc::Sender<StreamFrame>,
     mouse_position: Arc<Mutex<Option<MousePosition>>>,
-    acceleration: bool,
+    hwaccel: bool,
 ) -> Result<()> {
     unsafe {
         ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
     }
     ffmpeg::init()?;
 
-    let mut decoder = setup_video_decoder(acceleration)?;
+    let mut decoder = setup_video_decoder(hwaccel)?;
 
     decoder.set_threading(ffmpeg::threading::Config {
         kind: ffmpeg::threading::Type::Frame,

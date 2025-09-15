@@ -19,7 +19,8 @@ pub struct StreamFrame {
 pub async fn run_cli_client(
     code: String,
     password: Option<String>,
-    acceleration: bool,
+    hwaccel: bool,
+    cursor_size: u32,
 ) -> Result<()> {
     let _awake = keep_active::Builder::default()
         .display(true)
@@ -40,12 +41,12 @@ pub async fn run_cli_client(
     tokio::spawn(connect::start_webrtc(
         password,
         server_addr,
-        acceleration,
+        hwaccel,
         frame_tx_clone,
     ));
 
     // run GUI in main thread
-    if let Err(err) = gui::run_gui(frame_rx) {
+    if let Err(err) = gui::run_gui(frame_rx, cursor_size) {
         eprintln!("GUI error: {}", err);
     }
 

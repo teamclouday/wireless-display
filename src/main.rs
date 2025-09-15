@@ -31,13 +31,8 @@ enum AppCommands {
         code: String,
         #[arg(help = "Password for authentication", long)]
         password: Option<String>,
-        #[arg(
-            help = "Enable hardware acceleration",
-            short,
-            long,
-            default_value_t = false
-        )]
-        acceleration: bool,
+        #[arg(help = "Enable hardware acceleration", long, default_value_t = false)]
+        hwaccel: bool,
     },
 
     #[command(about = "Run as client")]
@@ -46,13 +41,10 @@ enum AppCommands {
         code: String,
         #[arg(help = "Password for authentication", long)]
         password: Option<String>,
-        #[arg(
-            help = "Enable hardware acceleration",
-            short,
-            long,
-            default_value_t = false
-        )]
-        acceleration: bool,
+        #[arg(help = "Enable hardware acceleration", long, default_value_t = false)]
+        hwaccel: bool,
+        #[arg(help = "Cursor size", long, default_value_t = 16)]
+        cursor_size: u32,
     },
 }
 
@@ -66,13 +58,14 @@ async fn main() -> Result<()> {
             framerate,
             code,
             password,
-            acceleration,
-        } => run_cli_server(port, framerate, code, password, acceleration).await?,
+            hwaccel,
+        } => run_cli_server(port, framerate, code, password, hwaccel).await?,
         AppCommands::Client {
             code,
             password,
-            acceleration,
-        } => run_cli_client(code, password, acceleration).await?,
+            hwaccel,
+            cursor_size,
+        } => run_cli_client(code, password, hwaccel, cursor_size).await?,
     }
 
     Ok(())

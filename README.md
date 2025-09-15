@@ -15,14 +15,14 @@ Install the program from cargo:
 cargo install wireless-display
 ```
 
-On host machine (PC you are currently using):
+On the PC you are currently using, start server with hardware acceleration enabled:
 ```
-wireless-display server --acceleration
+wireless-display server --hwaccel
 ```
 
-Then on client machine (PC you want to use as second monitor):
+On the PC you want to use as second monitor, start client with hardware acceleration enabled:
 ```
-wireless-display client --acceleration
+wireless-display client --hwaccel
 ```
 
 See `wireless-display server --help` and `wireless-display client --help` for more options.
