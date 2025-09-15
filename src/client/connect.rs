@@ -181,17 +181,8 @@ const HW_DECODERS: &[&str] = &[
     "h264_vdpau", // NVIDIA VDPAU (alternative)
 ];
 
-async fn run_video_processor(
-    mut packet_rx: mpsc::Receiver<WebRTCPacket>,
-    frame_tx: mpsc::Sender<StreamFrame>,
-    mouse_position: Arc<Mutex<Option<MousePosition>>>,
-    acceleration: bool,
-) -> Result<()> {
-    unsafe {
-        ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
-    }
-    ffmpeg::init()?;
-
+#[cfg(not(target_os = "macos"))]
+fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
     let codec = if acceleration {
         HW_DECODERS
             .iter()
@@ -212,7 +203,52 @@ async fn run_video_processor(
     };
 
     let context = ffmpeg::codec::context::Context::new_with_codec(codec);
-    let mut decoder = context.decoder().video()?;
+    Ok(context.decoder().video()?)
+}
+
+#[cfg(target_os = "macos")]
+fn setup_video_decoder(acceleration: bool) -> Result<ffmpeg::decoder::Video> {
+    let codec = ffmpeg::codec::decoder::find(ffmpeg::codec::Id::H264)
+        .ok_or(anyhow::anyhow!("H264 decoder not found"))?;
+    let mut context = ffmpeg::codec::context::Context::new_with_codec(codec);
+
+    if acceleration {
+        unsafe {
+            let ctx_ptr = context.as_mut_ptr();
+
+            let mut hw_device_ctx: *mut ffmpeg::ffi::AVBufferRef = std::ptr::null_mut();
+            let ret = ffmpeg::ffi::av_hwdevice_ctx_create(
+                &mut hw_device_ctx,
+                ffmpeg::ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                0,
+            );
+
+            if ret < 0 {
+                eprintln!("Failed to enable hardware acceleration with video toolbox.");
+            } else {
+                (*ctx_ptr).hw_device_ctx = hw_device_ctx;
+                println!("Using hardware decoder: h264_videotoolbox");
+            }
+        }
+    }
+
+    Ok(context.decoder().video()?)
+}
+
+async fn run_video_processor(
+    mut packet_rx: mpsc::Receiver<WebRTCPacket>,
+    frame_tx: mpsc::Sender<StreamFrame>,
+    mouse_position: Arc<Mutex<Option<MousePosition>>>,
+    acceleration: bool,
+) -> Result<()> {
+    unsafe {
+        ffmpeg::ffi::av_log_set_level(ffmpeg::ffi::AV_LOG_QUIET);
+    }
+    ffmpeg::init()?;
+
+    let mut decoder = setup_video_decoder(acceleration)?;
 
     decoder.set_threading(ffmpeg::threading::Config {
         kind: ffmpeg::threading::Type::Frame,
