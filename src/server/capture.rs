@@ -221,6 +221,7 @@ pub async fn capture_screen(
         println!("Starting capture on monitor: {}", state.device);
 
         let mut decoded_frame = ffmpeg::frame::Video::empty();
+        let target_frame_duration = Duration::from_secs_f64(1.0 / state.framerate as f64);
         let mut frame_count: i64 = 0;
 
         for (stream, packet) in input.packets() {
@@ -243,12 +244,10 @@ pub async fn capture_screen(
                         if state.video_track.try_lock().is_ok_and(|t| t.is_some()) {
                             // send to WebRTC
                             let packet_data = encoded_packet.data().unwrap().to_vec();
-                            let sample_duration =
-                                Duration::from_secs_f64(1.0 / state.framerate as f64);
 
                             let sample = Sample {
                                 data: packet_data.into(),
-                                duration: sample_duration,
+                                duration: target_frame_duration,
                                 ..Default::default()
                             };
 
@@ -285,7 +284,7 @@ pub async fn capture_mouse(
     state: Arc<AppState>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
-    let (tx, mut rx) = mpsc::channel::<MousePosition>(64);
+    let (tx, mut rx) = mpsc::channel::<MousePosition>(16);
     let state_clone = state.clone();
 
     let shutdown_signal = Arc::new(AtomicBool::new(false));
@@ -313,7 +312,9 @@ pub async fn capture_mouse(
 
     let shutdown_signal_clone = shutdown_signal.clone();
     let capture_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(16));
+        // capture mouse position every 33ms (~30fps)
+        let mut interval = tokio::time::interval(Duration::from_millis(33));
+        let mut last_position = MousePosition { x: -1.0, y: -1.0 };
 
         println!("Starting mouse capture...");
 
@@ -352,7 +353,13 @@ pub async fn capture_mouse(
                         y: relative_y,
                     };
 
-                    let _ = tx.try_send(current_position);
+                    // only send if position changed
+                    if (current_position.x - last_position.x).abs() > f64::EPSILON
+                        || (current_position.y - last_position.y).abs() > f64::EPSILON
+                    {
+                        last_position = current_position.clone();
+                        let _ = tx.try_send(current_position);
+                    }
                 }
                 Mouse::Error => {
                     eprintln!("Failed to capture mouse position");

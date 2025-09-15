@@ -62,10 +62,16 @@ async fn sdp_handler(
     }
 
     // if already connected or connecting, reject new connection
-    if *state.connection.lock().await != ConnectionState::Disconnected {
-        println!("Connection already in progress or established");
+    if let Ok(conn_state) = state.connection.try_lock() {
+        if *conn_state != ConnectionState::Disconnected {
+            println!("Connection already in progress or established");
+            return Err(warp::reject::custom(ErrorMessage(
+                "Connection already in progress or established".to_string(),
+            )));
+        }
+    } else {
         return Err(warp::reject::custom(ErrorMessage(
-            "Connection already in progress or established".to_string(),
+            "Connection busy".to_string(),
         )));
     }
 
@@ -74,7 +80,6 @@ async fn sdp_handler(
 
     // create new peer connection
     let pc = create_peer_connection().await.unwrap();
-    *state.peer_connection.lock().await = Some(pc.clone());
 
     // prepare local video track
     let video_track = Arc::new(TrackLocalStaticSample::new(
@@ -85,35 +90,40 @@ async fn sdp_handler(
         "video".to_owned(),
         "webrtc-rs".to_owned(),
     ));
-    *state.video_track.lock().await = Some(video_track.clone());
+
+    {
+        let mut peer_connection = state.peer_connection.lock().await;
+        let mut video_track_state = state.video_track.lock().await;
+        *peer_connection = Some(pc.clone());
+        *video_track_state = Some(video_track.clone());
+    }
 
     // connect mouse data channel
     let state_clone_for_dc = state.clone();
     pc.on_data_channel(Box::new(move |dc| {
-        let label = dc.label().to_string();
-
-        if label == "mouse" {
+        if dc.label() == "mouse" {
             println!("Mouse data channel opened");
 
             let state_clone = state_clone_for_dc.clone();
-            tokio::spawn(async move {
-                *state_clone.mouse_channel.lock().await = Some(dc);
-            });
+            let dc_clone = dc.clone();
+            Box::pin(async move {
+                *state_clone.mouse_channel.lock().await = Some(dc_clone);
+            })
+        } else {
+            Box::pin(async {})
         }
-
-        Box::pin(async {})
     }));
 
-    let rtp_sender = pc
+    let _ = pc
         .add_track(Arc::clone(&video_track) as Arc<dyn TrackLocal + Send + Sync>)
         .await
         .unwrap();
 
     // read incoming RTCP packets
-    tokio::spawn(async move {
-        let mut rtcp_buf = vec![0u8; 1500];
-        while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
-    });
+    // tokio::spawn(async move {
+    //     let mut rtcp_buf = vec![0u8; 1500];
+    //     while let Ok((_, _)) = rtp_sender.read(&mut rtcp_buf).await {}
+    // });
 
     // set handler for peer connection state
     let state_clone = state.clone();
